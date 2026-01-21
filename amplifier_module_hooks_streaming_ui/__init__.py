@@ -25,13 +25,7 @@ SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇",
 
 
 async def mount(coordinator: Any, config: dict[str, Any]) -> None:
-    """Mount streaming UI hooks module.
-
-    Args:
-        coordinator: The amplifier coordinator instance
-        config: Configuration from profile
-    """
-    # Extract config from ui section
+    """Mount streaming UI hooks module."""
     ui_config = config.get("ui", {})
     show_thinking = ui_config.get("show_thinking_stream", True)
     show_tool_lines = ui_config.get("show_tool_lines", 5)
@@ -42,7 +36,6 @@ async def mount(coordinator: Any, config: dict[str, Any]) -> None:
     stuck_threshold = ui_config.get("stuck_threshold", 60.0)
     spinner_interval = ui_config.get("spinner_interval", 0.1)
 
-    # Create hook handlers
     hooks = StreamingUIHooks(
         show_thinking, 
         show_tool_lines, 
@@ -52,17 +45,13 @@ async def mount(coordinator: Any, config: dict[str, Any]) -> None:
         spinner_interval=spinner_interval,
     )
 
-    # Register hooks on the coordinator
-    coordinator.hooks.register("session:start", hooks.handle_session_start)
-    coordinator.hooks.register("session:end", hooks.handle_session_end)
+    # Register hooks
     coordinator.hooks.register("content_block:start", hooks.handle_content_block_start)
     coordinator.hooks.register("content_block:end", hooks.handle_content_block_end)
     coordinator.hooks.register("tool:pre", hooks.handle_tool_pre)
     coordinator.hooks.register("tool:post", hooks.handle_tool_post)
 
-    # Log successful mount
     logger.info("Mounted hooks-streaming-ui")
-
     return
 
 
@@ -78,16 +67,6 @@ class StreamingUIHooks:
         stuck_threshold: float = 60.0,
         spinner_interval: float = 0.1,
     ):
-        """Initialize streaming UI hooks.
-
-        Args:
-            show_thinking: Whether to display thinking blocks
-            show_tool_lines: Number of lines to show for tool I/O
-            show_token_usage: Whether to display token usage
-            show_elapsed: Whether to show elapsed session time
-            stuck_threshold: Seconds of inactivity before showing warning
-            spinner_interval: Seconds between spinner frame updates
-        """
         self.show_thinking = show_thinking
         self.show_tool_lines = show_tool_lines
         self.show_token_usage = show_token_usage
@@ -97,10 +76,10 @@ class StreamingUIHooks:
         
         self.thinking_blocks: dict[int, dict[str, Any]] = {}
         
-        # Session state tracking
+        # Session state - initialized on first activity
         self.session_start: datetime | None = None
         self.last_activity: datetime | None = None
-        self.current_state: str = "idle"  # idle, thinking, tool
+        self.current_state: str = "idle"
         self.current_tool: str | None = None
         self.spinner_frame: int = 0
         
@@ -109,6 +88,12 @@ class StreamingUIHooks:
         self._spinner_thread: threading.Thread | None = None
         self._spinner_lock = threading.Lock()
         self._last_spinner_line: str = ""
+
+    def _ensure_session_started(self):
+        """Initialize session timing on first activity."""
+        if self.session_start is None:
+            self.session_start = datetime.now()
+            self.last_activity = datetime.now()
 
     def _format_elapsed(self) -> str:
         """Format elapsed time since session start."""
@@ -144,11 +129,8 @@ class StreamingUIHooks:
                 return
             
             frame = self._get_spinner_frame()
-            
-            # Build status parts
             parts = []
             
-            # State indicator
             if self.current_state == "thinking":
                 parts.append(f"{frame} Thinking")
             elif self.current_state == "tool":
@@ -157,19 +139,14 @@ class StreamingUIHooks:
             else:
                 parts.append(f"{frame} Processing")
             
-            # Elapsed time
             if self.show_elapsed:
                 elapsed = self._format_elapsed()
                 if elapsed:
                     parts.append(f"[{elapsed}]")
             
-            # Stuck warning
             stuck = self._check_stuck()
-            
             line = " ".join(parts) + stuck
             
-            # Use \r to overwrite the line
-            # Clear previous line content first (handle varying lengths)
             clear_len = max(len(self._last_spinner_line), len(line)) + 5
             sys.stderr.write(f"\r{' ' * clear_len}\r\033[36m{line}\033[0m")
             sys.stderr.flush()
@@ -183,6 +160,7 @@ class StreamingUIHooks:
 
     def _start_spinner(self, state: str, tool_name: str | None = None):
         """Start the background spinner with given state."""
+        self._ensure_session_started()
         with self._spinner_lock:
             self.current_state = state
             self.current_tool = tool_name
@@ -201,7 +179,6 @@ class StreamingUIHooks:
             self.current_tool = None
             
             if clear and self._last_spinner_line:
-                # Clear the spinner line
                 clear_len = len(self._last_spinner_line) + 10
                 sys.stderr.write(f"\r{' ' * clear_len}\r")
                 sys.stderr.flush()
@@ -217,25 +194,12 @@ class StreamingUIHooks:
                 return parts[1]
         return None
 
-    async def handle_session_start(
-        self, _event: str, data: dict[str, Any]
-    ) -> HookResult:
-        """Handle session start - initialize timing."""
-        self.session_start = datetime.now()
-        self.last_activity = datetime.now()
-        return HookResult(action="continue")
-
-    async def handle_session_end(
-        self, _event: str, data: dict[str, Any]
-    ) -> HookResult:
-        """Handle session end - stop spinner."""
-        self._stop_spinner(clear=True)
-        return HookResult(action="continue")
-
     async def handle_content_block_start(
         self, _event: str, data: dict[str, Any]
     ) -> HookResult:
         """Detect thinking blocks and prepare for display."""
+        self._ensure_session_started()
+        
         block_type = data.get("block_type")
         block_index = data.get("block_index")
         session_id = data.get("session_id")
@@ -247,14 +211,10 @@ class StreamingUIHooks:
             and block_index is not None
         ):
             self.thinking_blocks[block_index] = {"started": True, "agent": agent_name}
-            
-            # Start spinner for thinking
             self._start_spinner("thinking")
             
             if agent_name:
-                sys.stderr.write(
-                    f"\n    \033[36m🤔 [{agent_name}] Thinking...\033[0m\n"
-                )
+                sys.stderr.write(f"\n    \033[36m🤔 [{agent_name}] Thinking...\033[0m\n")
                 sys.stderr.flush()
             else:
                 sys.stderr.write("\n\033[36m🧠 Thinking...\033[0m\n")
@@ -336,15 +296,9 @@ class StreamingUIHooks:
 
             cache_info = ""
             if cache_read > 0 or cache_create > 0:
-                cache_pct = (
-                    int((cache_read / total_input) * 100) if total_input > 0 else 0
-                )
-                if cache_read > 0:
-                    cache_info = f" ({cache_pct}% cached)"
-                else:
-                    cache_info = " (caching...)"
+                cache_pct = int((cache_read / total_input) * 100) if total_input > 0 else 0
+                cache_info = f" ({cache_pct}% cached)" if cache_read > 0 else " (caching...)"
 
-            # Add elapsed time to token usage line
             elapsed_str = ""
             if self.show_elapsed:
                 elapsed = self._format_elapsed()
@@ -352,15 +306,15 @@ class StreamingUIHooks:
                     elapsed_str = f" | ⏱ {elapsed}"
 
             print(f"{indent}\033[2m│  📊 Token Usage\033[0m")
-            print(
-                f"{indent}\033[2m└─ Input: {input_str}{cache_info} | Output: {output_str} | Total: {total_str}{elapsed_str}\033[0m"
-            )
+            print(f"{indent}\033[2m└─ Input: {input_str}{cache_info} | Output: {output_str} | Total: {total_str}{elapsed_str}\033[0m")
 
         self.last_activity = datetime.now()
         return HookResult(action="continue")
 
     async def handle_tool_pre(self, _event: str, data: dict[str, Any]) -> HookResult:
         """Display tool invocation with truncated input."""
+        self._ensure_session_started()
+        
         tool_name = data.get("tool_name", "unknown")
         tool_input = data.get("tool_input", {})
         session_id = data.get("session_id")
@@ -405,17 +359,11 @@ class StreamingUIHooks:
                 else:
                     output = stdout
                     if stderr:
-                        output = (
-                            f"{output}\n[stderr]: {stderr}"
-                            if output
-                            else f"[stderr]: {stderr}"
-                        )
+                        output = f"{output}\n[stderr]: {stderr}" if output else f"[stderr]: {stderr}"
                     output = output or "(no output)"
             else:
                 success = result.get("success", True)
-                output = self._format_for_display(
-                    raw_output if raw_output is not None else result
-                )
+                output = self._format_for_display(raw_output if raw_output is not None else result)
         else:
             output = self._format_for_display(result)
             success = True
@@ -424,9 +372,7 @@ class StreamingUIHooks:
         icon = "✅" if success else "❌"
 
         if agent_name:
-            print(
-                f"    \033[36m└─ {icon} [{agent_name}] Tool result: {tool_name}\033[0m"
-            )
+            print(f"    \033[36m└─ {icon} [{agent_name}] Tool result: {tool_name}\033[0m")
             indented = "\n".join(f"       {line}" for line in truncated.split("\n"))
             print(f"\033[2m{indented}\033[0m\n")
         else:
@@ -453,7 +399,6 @@ class StreamingUIHooks:
     def _to_yaml_style(self, value: Any, indent: int = 0) -> str:
         """Convert value to YAML-style string."""
         prefix = "  " * indent
-
         if value is None:
             return "null"
         if isinstance(value, bool):
