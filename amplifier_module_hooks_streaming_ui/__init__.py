@@ -1,6 +1,7 @@
 """Streaming UI Hooks Module
 
 Display streaming LLM output (thinking blocks, tool calls, and token usage) to console.
+Includes session activity indicator with spinner, elapsed time, and stuck detection.
 """
 
 # Amplifier module metadata
@@ -8,6 +9,9 @@ __amplifier_module_type__ = "hook"
 
 import logging
 import sys
+import threading
+import time
+from datetime import datetime
 from typing import Any
 
 from amplifier_core.models import HookResult
@@ -15,6 +19,9 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 logger = logging.getLogger(__name__)
+
+# Spinner frames (same style as make/cargo)
+SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
 async def mount(coordinator: Any, config: dict[str, Any]) -> None:
@@ -29,11 +36,25 @@ async def mount(coordinator: Any, config: dict[str, Any]) -> None:
     show_thinking = ui_config.get("show_thinking_stream", True)
     show_tool_lines = ui_config.get("show_tool_lines", 5)
     show_token_usage = ui_config.get("show_token_usage", True)
+    
+    # Session indicator config
+    show_elapsed = ui_config.get("show_elapsed", True)
+    stuck_threshold = ui_config.get("stuck_threshold", 60.0)
+    spinner_interval = ui_config.get("spinner_interval", 0.1)
 
     # Create hook handlers
-    hooks = StreamingUIHooks(show_thinking, show_tool_lines, show_token_usage)
+    hooks = StreamingUIHooks(
+        show_thinking, 
+        show_tool_lines, 
+        show_token_usage,
+        show_elapsed=show_elapsed,
+        stuck_threshold=stuck_threshold,
+        spinner_interval=spinner_interval,
+    )
 
     # Register hooks on the coordinator
+    coordinator.hooks.register("session:start", hooks.handle_session_start)
+    coordinator.hooks.register("session:end", hooks.handle_session_end)
     coordinator.hooks.register("content_block:start", hooks.handle_content_block_start)
     coordinator.hooks.register("content_block:end", hooks.handle_content_block_end)
     coordinator.hooks.register("tool:pre", hooks.handle_tool_pre)
@@ -46,10 +67,16 @@ async def mount(coordinator: Any, config: dict[str, Any]) -> None:
 
 
 class StreamingUIHooks:
-    """Hooks for displaying streaming UI output."""
+    """Hooks for displaying streaming UI output with session activity indicator."""
 
     def __init__(
-        self, show_thinking: bool, show_tool_lines: int, show_token_usage: bool
+        self, 
+        show_thinking: bool, 
+        show_tool_lines: int, 
+        show_token_usage: bool,
+        show_elapsed: bool = True,
+        stuck_threshold: float = 60.0,
+        spinner_interval: float = 0.1,
     ):
         """Initialize streaming UI hooks.
 
@@ -57,77 +84,179 @@ class StreamingUIHooks:
             show_thinking: Whether to display thinking blocks
             show_tool_lines: Number of lines to show for tool I/O
             show_token_usage: Whether to display token usage
+            show_elapsed: Whether to show elapsed session time
+            stuck_threshold: Seconds of inactivity before showing warning
+            spinner_interval: Seconds between spinner frame updates
         """
         self.show_thinking = show_thinking
         self.show_tool_lines = show_tool_lines
         self.show_token_usage = show_token_usage
+        self.show_elapsed = show_elapsed
+        self.stuck_threshold = stuck_threshold
+        self.spinner_interval = spinner_interval
+        
         self.thinking_blocks: dict[int, dict[str, Any]] = {}
+        
+        # Session state tracking
+        self.session_start: datetime | None = None
+        self.last_activity: datetime | None = None
+        self.current_state: str = "idle"  # idle, thinking, tool
+        self.current_tool: str | None = None
+        self.spinner_frame: int = 0
+        
+        # Spinner thread control
+        self._spinner_running = False
+        self._spinner_thread: threading.Thread | None = None
+        self._spinner_lock = threading.Lock()
+        self._last_spinner_line: str = ""
+
+    def _format_elapsed(self) -> str:
+        """Format elapsed time since session start."""
+        if not self.session_start:
+            return ""
+        elapsed = datetime.now() - self.session_start
+        total_seconds = int(elapsed.total_seconds())
+        minutes, seconds = divmod(total_seconds, 60)
+        if minutes >= 60:
+            hours, minutes = divmod(minutes, 60)
+            return f"{hours}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes:02d}:{seconds:02d}"
+
+    def _get_spinner_frame(self) -> str:
+        """Get the next spinner frame."""
+        frame = SPINNER_FRAMES[self.spinner_frame % len(SPINNER_FRAMES)]
+        self.spinner_frame += 1
+        return frame
+
+    def _check_stuck(self) -> str:
+        """Check if session appears stuck and return warning if so."""
+        if not self.last_activity:
+            return ""
+        idle_seconds = (datetime.now() - self.last_activity).total_seconds()
+        if idle_seconds > self.stuck_threshold:
+            return f" \033[33m⚠ {int(idle_seconds)}s idle\033[0m"
+        return ""
+
+    def _update_spinner_line(self):
+        """Update the spinner status line (called from background thread)."""
+        with self._spinner_lock:
+            if not self._spinner_running:
+                return
+            
+            frame = self._get_spinner_frame()
+            
+            # Build status parts
+            parts = []
+            
+            # State indicator
+            if self.current_state == "thinking":
+                parts.append(f"{frame} Thinking")
+            elif self.current_state == "tool":
+                tool_name = self.current_tool or "tool"
+                parts.append(f"{frame} {tool_name}")
+            else:
+                parts.append(f"{frame} Processing")
+            
+            # Elapsed time
+            if self.show_elapsed:
+                elapsed = self._format_elapsed()
+                if elapsed:
+                    parts.append(f"[{elapsed}]")
+            
+            # Stuck warning
+            stuck = self._check_stuck()
+            
+            line = " ".join(parts) + stuck
+            
+            # Use \r to overwrite the line
+            # Clear previous line content first (handle varying lengths)
+            clear_len = max(len(self._last_spinner_line), len(line)) + 5
+            sys.stderr.write(f"\r{' ' * clear_len}\r\033[36m{line}\033[0m")
+            sys.stderr.flush()
+            self._last_spinner_line = line
+
+    def _spinner_loop(self):
+        """Background thread that updates the spinner."""
+        while self._spinner_running:
+            self._update_spinner_line()
+            time.sleep(self.spinner_interval)
+
+    def _start_spinner(self, state: str, tool_name: str | None = None):
+        """Start the background spinner with given state."""
+        with self._spinner_lock:
+            self.current_state = state
+            self.current_tool = tool_name
+            self.last_activity = datetime.now()
+            
+            if not self._spinner_running:
+                self._spinner_running = True
+                self._spinner_thread = threading.Thread(target=self._spinner_loop, daemon=True)
+                self._spinner_thread.start()
+
+    def _stop_spinner(self, clear: bool = True):
+        """Stop the spinner and optionally clear the line."""
+        with self._spinner_lock:
+            self._spinner_running = False
+            self.current_state = "idle"
+            self.current_tool = None
+            
+            if clear and self._last_spinner_line:
+                # Clear the spinner line
+                clear_len = len(self._last_spinner_line) + 10
+                sys.stderr.write(f"\r{' ' * clear_len}\r")
+                sys.stderr.flush()
+                self._last_spinner_line = ""
 
     def _parse_agent_from_session_id(self, session_id: str | None) -> str | None:
-        """Extract agent name from hierarchical session ID.
-
-        Session ID format follows W3C Trace Context principles:
-        {parent-span}-{child-span}_{agent-name}
-
-        Examples:
-        - Sub-session: 0000000000000000-7cc787dd22d54f6c_developer-expertise-zen-architect
-        - Parent session: 12345678-1234-1234-1234-123456789012 (no underscore, no agent)
-
-        Args:
-            session_id: Session ID with optional agent name after underscore
-
-        Returns:
-            Agent name if child session (contains underscore), None if parent session
-        """
+        """Extract agent name from hierarchical session ID."""
         if not session_id:
             return None
-
-        # W3C Trace Context format: {parent-span}-{child-span}_{agent-name}
-        # Underscore separator marks the boundary before agent name
         if "_" in session_id:
-            parts = session_id.split("_", 1)  # Split on first underscore only
+            parts = session_id.split("_", 1)
             if len(parts) == 2:
-                # Everything after underscore is agent name
-                # Handles namespaced agents like "developer-expertise-zen-architect"
                 return parts[1]
-
-        # No underscore = parent session (no agent name)
         return None
+
+    async def handle_session_start(
+        self, _event: str, data: dict[str, Any]
+    ) -> HookResult:
+        """Handle session start - initialize timing."""
+        self.session_start = datetime.now()
+        self.last_activity = datetime.now()
+        return HookResult(action="continue")
+
+    async def handle_session_end(
+        self, _event: str, data: dict[str, Any]
+    ) -> HookResult:
+        """Handle session end - stop spinner."""
+        self._stop_spinner(clear=True)
+        return HookResult(action="continue")
 
     async def handle_content_block_start(
         self, _event: str, data: dict[str, Any]
     ) -> HookResult:
-        """Detect thinking blocks and prepare for display.
-
-        Args:
-            _event: Event name (content_block:start) - unused
-            data: Event data containing block information
-
-        Returns:
-            HookResult with action="continue"
-        """
+        """Detect thinking blocks and prepare for display."""
         block_type = data.get("block_type")
         block_index = data.get("block_index")
-
-        # Detect sub-agent context for visual distinction
         session_id = data.get("session_id")
         agent_name = self._parse_agent_from_session_id(session_id)
 
-        # Only track thinking blocks if configured to show them
         if (
             block_type in {"thinking", "reasoning"}
             and self.show_thinking
             and block_index is not None
         ):
             self.thinking_blocks[block_index] = {"started": True, "agent": agent_name}
+            
+            # Start spinner for thinking
+            self._start_spinner("thinking")
+            
             if agent_name:
-                # Sub-agent thinking: status line cyan, 4-space indent
                 sys.stderr.write(
                     f"\n    \033[36m🤔 [{agent_name}] Thinking...\033[0m\n"
                 )
                 sys.stderr.flush()
             else:
-                # Parent thinking: status line cyan
                 sys.stderr.write("\n\033[36m🧠 Thinking...\033[0m\n")
                 sys.stderr.flush()
 
@@ -136,40 +265,29 @@ class StreamingUIHooks:
     async def handle_content_block_end(
         self, _event: str, data: dict[str, Any]
     ) -> HookResult:
-        """Display complete thinking block and token usage.
-
-        Args:
-            _event: Event name (content_block:end) - unused
-            data: Event data containing complete block, usage, and total count
-
-        Returns:
-            HookResult with action="continue"
-        """
+        """Display complete thinking block and token usage."""
         block_index = data.get("block_index")
         total_blocks = data.get("total_blocks")
         block = data.get("block", {})
         block_type = block.get("type")
-        usage = data.get("usage")  # Usage from parent response
+        usage = data.get("usage")
         is_last_block = block_index == total_blocks - 1 if total_blocks else False
 
-        # Parse agent name from session_id for consistent indentation
-        # (used for both thinking blocks and token usage display)
         session_id = data.get("session_id")
         agent_name = self._parse_agent_from_session_id(session_id)
 
-        # Override with tracked thinking block agent if available (for consistency)
         if block_index in self.thinking_blocks:
             tracked_agent = self.thinking_blocks[block_index].get("agent")
             if tracked_agent:
                 agent_name = tracked_agent
 
-        # Display thinking block if we were tracking it
         if (
             block_type in {"thinking", "reasoning"}
             and block_index is not None
             and block_index in self.thinking_blocks
         ):
-            # Extract thinking text from block
+            self._stop_spinner(clear=True)
+            
             thinking_text = (
                 block.get("thinking", "")
                 or block.get("text", "")
@@ -177,65 +295,45 @@ class StreamingUIHooks:
             )
 
             if thinking_text:
-                # Display formatted thinking block with agent context
                 if agent_name:
-                    # Sub-agent thinking: dark gray, 4-space indent, markdown wrapped in dim ANSI codes
                     print(f"\n    \033[90m{'=' * 56}\033[0m")
                     print(f"    \033[90m[{agent_name}] Thinking:\033[0m")
                     print(f"    \033[90m{'-' * 56}\033[0m")
-                    # Render markdown and wrap each line in dim ANSI code with indent
                     from io import StringIO
-
                     buffer = StringIO()
                     temp_console = Console(file=buffer, highlight=False, width=52)
                     temp_console.print(Markdown(thinking_text))
                     rendered = buffer.getvalue()
                     for line in rendered.rstrip().split("\n"):
-                        # Wrap each line in dim ANSI code (same approach as tool results)
                         print(f"    \033[2m{line}\033[0m")
                     print(f"    \033[90m{'=' * 56}\033[0m\n")
                 else:
-                    # Parent thinking: markdown rendered and wrapped in dim ANSI codes
                     from io import StringIO
-
                     buffer = StringIO()
                     temp_console = Console(file=buffer, highlight=False, width=60)
                     temp_console.print(Markdown(thinking_text))
                     rendered = buffer.getvalue()
-
                     print(f"\n\033[90m{'=' * 60}\033[0m")
                     print("\033[90mThinking:\033[0m")
                     print(f"\033[90m{'-' * 60}\033[0m")
-                    # Wrap markdown in dim ANSI code (same approach as tool results)
                     print(f"\033[2m{rendered.rstrip()}\033[0m")
                     print(f"\033[90m{'=' * 60}\033[0m\n")
 
-            # Clean up tracking
             del self.thinking_blocks[block_index]
 
-        # Display token usage after last block (if present and configured)
         if is_last_block and self.show_token_usage and usage:
             indent = "    " if agent_name else ""
-
-            # Get raw token counts
             input_tokens = usage.get("input_tokens", 0)
             output_tokens = usage.get("output_tokens", 0)
-
-            # Cache metrics (Anthropic splits input into cached/uncached buckets)
             cache_read = usage.get("cache_read_input_tokens", 0)
             cache_create = usage.get("cache_creation_input_tokens", 0)
-
-            # Compute actual total input (input_tokens alone is misleading with caching)
-            # When caching is active, input_tokens is just the uncacheable portion
             total_input = input_tokens + cache_read + cache_create
             total_tokens = total_input + output_tokens
 
-            # Format numbers with thousands separators
             input_str = f"{total_input:,}"
             output_str = f"{output_tokens:,}"
             total_str = f"{total_tokens:,}"
 
-            # Build cache info string if caching is active
             cache_info = ""
             if cache_read > 0 or cache_create > 0:
                 cache_pct = (
@@ -244,86 +342,64 @@ class StreamingUIHooks:
                 if cache_read > 0:
                     cache_info = f" ({cache_pct}% cached)"
                 else:
-                    # First request - cache being created
                     cache_info = " (caching...)"
+
+            # Add elapsed time to token usage line
+            elapsed_str = ""
+            if self.show_elapsed:
+                elapsed = self._format_elapsed()
+                if elapsed:
+                    elapsed_str = f" | ⏱ {elapsed}"
 
             print(f"{indent}\033[2m│  📊 Token Usage\033[0m")
             print(
-                f"{indent}\033[2m└─ Input: {input_str}{cache_info} | Output: {output_str} | Total: {total_str}\033[0m"
+                f"{indent}\033[2m└─ Input: {input_str}{cache_info} | Output: {output_str} | Total: {total_str}{elapsed_str}\033[0m"
             )
 
+        self.last_activity = datetime.now()
         return HookResult(action="continue")
 
     async def handle_tool_pre(self, _event: str, data: dict[str, Any]) -> HookResult:
-        """Display tool invocation with truncated input.
-
-        Shows sub-agent tool calls with indentation and agent name for clarity.
-
-        Args:
-            _event: Event name (tool:pre) - unused
-            data: Event data containing tool and arguments (includes session_id from defaults)
-
-        Returns:
-            HookResult with action="continue"
-        """
+        """Display tool invocation with truncated input."""
         tool_name = data.get("tool_name", "unknown")
         tool_input = data.get("tool_input", {})
         session_id = data.get("session_id")
 
-        # Detect if this is a sub-agent's tool call
-        agent_name = self._parse_agent_from_session_id(session_id)
+        self._stop_spinner(clear=True)
+        self._start_spinner("tool", tool_name)
 
-        # Format tool input for display with proper formatting
+        agent_name = self._parse_agent_from_session_id(session_id)
         input_str = self._format_for_display(tool_input)
         truncated = self._truncate_lines(input_str, self.show_tool_lines)
 
         if agent_name:
-            # Sub-agent tool call: status line cyan, 4-space indent, box drawing
             print(f"\n    \033[36m┌─ 🔧 [{agent_name}] Using tool: {tool_name}\033[0m")
-            # Indent each line of arguments
             for line in truncated.split("\n"):
                 print(f"    \033[36m│\033[0m  \033[2m{line}\033[0m")
         else:
-            # Parent tool call: status line cyan
             print(f"\n\033[36m🔧 Using tool: {tool_name}\033[0m")
-            # Indent each line of arguments
             for line in truncated.split("\n"):
                 print(f"   \033[2m{line}\033[0m")
 
         return HookResult(action="continue")
 
     async def handle_tool_post(self, _event: str, data: dict[str, Any]) -> HookResult:
-        """Display tool result with truncated output.
-
-        Shows sub-agent tool results with indentation and agent name for clarity.
-
-        Args:
-            _event: Event name (tool:post) - unused
-            data: Event data containing tool result (includes session_id from defaults)
-
-        Returns:
-            HookResult with action="continue"
-        """
+        """Display tool result with truncated output."""
+        self._stop_spinner(clear=True)
+        
         tool_name = data.get("tool_name", "unknown")
         result = data.get("tool_response", data.get("result", {}))
         session_id = data.get("session_id")
-
-        # Detect if this is a sub-agent's tool result
         agent_name = self._parse_agent_from_session_id(session_id)
 
-        # Extract output from result (handle different result formats)
         if isinstance(result, dict):
             raw_output = result.get("output")
-
-            # Check for bash-style output with returncode (special case for stdout/stderr handling)
             bash_output = raw_output if isinstance(raw_output, dict) else result
             if isinstance(bash_output, dict) and "returncode" in bash_output:
                 stdout = bash_output.get("stdout", "")
                 stderr = bash_output.get("stderr", "")
                 returncode = bash_output.get("returncode", 0)
                 success = returncode == 0
-
-                # Smart stdout/stderr combining based on success
                 if success:
                     output = stdout or stderr or "(no output)"
                 else:
@@ -336,107 +412,67 @@ class StreamingUIHooks:
                         )
                     output = output or "(no output)"
             else:
-                # Generic handling - format nicely as JSON if dict/list
                 success = result.get("success", True)
                 output = self._format_for_display(
                     raw_output if raw_output is not None else result
                 )
         else:
-            # Not a dict - format generically
             output = self._format_for_display(result)
             success = True
 
-        # Truncate output for display
         truncated = self._truncate_lines(output, self.show_tool_lines)
-
-        # Choose icon based on success
         icon = "✅" if success else "❌"
 
         if agent_name:
-            # Sub-agent tool result: status line cyan, 4-space indent, box drawing
             print(
                 f"    \033[36m└─ {icon} [{agent_name}] Tool result: {tool_name}\033[0m"
             )
-            # Indent each line of multi-line output
             indented = "\n".join(f"       {line}" for line in truncated.split("\n"))
             print(f"\033[2m{indented}\033[0m\n")
         else:
-            # Parent tool result: status line cyan
             print(f"\033[36m{icon} Tool result: {tool_name}\033[0m")
-            # Indent each line of multi-line output
             indented = "\n".join(f"   {line}" for line in truncated.split("\n"))
             print(f"\033[2m{indented}\033[0m\n")
 
+        self.last_activity = datetime.now()
         return HookResult(action="continue")
 
     def _format_for_display(self, value: Any) -> str:
-        """Format any value for readable display.
-
-        Detects dict/list structures and formats them as YAML-style for
-        cleaner output (no quotes, no braces).
-
-        Args:
-            value: Any value to format
-
-        Returns:
-            Formatted string representation
-        """
+        """Format any value for readable display."""
         if value is None:
             return "(none)"
-
-        # Already a string - return as-is (preserves natural newlines)
         if isinstance(value, str):
             return value if value else "(empty)"
-
-        # Dict or list - format as YAML-style (cleaner than JSON)
         if isinstance(value, (dict, list)):
             try:
                 return self._to_yaml_style(value)
             except Exception:
                 return str(value)
-
-        # Anything else - string representation
         return str(value)
 
     def _to_yaml_style(self, value: Any, indent: int = 0) -> str:
-        """Convert value to YAML-style string (without pyyaml dependency).
-
-        Args:
-            value: Value to format
-            indent: Current indentation level
-
-        Returns:
-            YAML-style formatted string
-        """
+        """Convert value to YAML-style string."""
         prefix = "  " * indent
 
         if value is None:
             return "null"
-
         if isinstance(value, bool):
             return "true" if value else "false"
-
         if isinstance(value, (int, float)):
             return str(value)
-
         if isinstance(value, str):
-            # Multi-line strings get block style
             if "\n" in value:
                 lines = value.split("\n")
                 return "|\n" + "\n".join(f"{prefix}  {line}" for line in lines)
-            # Only quote if truly ambiguous YAML - very minimal set
-            # Allow: paths, globs (*), regex patterns, most normal strings
             if value and value[0] not in "-?:,[]{}#&!|>'\"%@`" and ": " not in value:
                 return value
             return f'"{value}"'
-
         if isinstance(value, list):
             if not value:
                 return "[]"
             lines = []
             for item in value:
                 if isinstance(item, dict):
-                    # Format dict items with dash, keys aligned
                     for i, (k, v) in enumerate(item.items()):
                         formatted_v = self._to_yaml_style(v, indent + 1)
                         if i == 0:
@@ -447,14 +483,12 @@ class StreamingUIHooks:
                     formatted = self._to_yaml_style(item, indent + 1)
                     lines.append(f"{prefix}- {formatted}")
             return "\n".join(lines)
-
         if isinstance(value, dict):
             if not value:
                 return "{}"
             lines = []
             for k, v in value.items():
                 if isinstance(v, (dict, list)) and v:
-                    # Nested structure - put on next line, no extra indent
                     formatted = self._to_yaml_style(v, indent)
                     lines.append(f"{prefix}{k}:")
                     lines.append(formatted)
@@ -462,40 +496,19 @@ class StreamingUIHooks:
                     formatted = self._to_yaml_style(v, indent + 1)
                     lines.append(f"{prefix}{k}: {formatted}")
             return "\n".join(lines)
-
         return str(value)
 
     def _truncate_lines(self, text: str, max_lines: int) -> str:
-        """Truncate text to max_lines with ellipsis.
-
-        Handles both multi-line text and single-line output (like dicts).
-        For single lines over 200 chars, truncates with character limit.
-
-        Args:
-            text: Text to truncate (may be any type despite type hint)
-            max_lines: Maximum number of lines to show
-
-        Returns:
-            Truncated text with ellipsis if needed
-        """
-        # Defensive: ensure text is actually a string before any operations
+        """Truncate text to max_lines with ellipsis."""
         if not isinstance(text, str):
             text = str(text) if text is not None else ""
-
         if not text:
             return "(empty)"
-
         lines = text.split("\n")
-
-        # If it's a single line over 200 chars, truncate by character
         if len(lines) == 1 and len(text) > 200:
             return text[:200] + f"... ({len(text) - 200} more chars)"
-
-        # Multi-line: truncate by line count
         if len(lines) <= max_lines:
             return text
-
-        # Truncate and add indicator
         truncated = lines[:max_lines]
         remaining = len(lines) - max_lines
         truncated.append(f"... ({remaining} more lines)")
