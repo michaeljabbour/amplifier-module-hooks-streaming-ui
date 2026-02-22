@@ -466,7 +466,7 @@ state, only displays information...
 
       <div class="line gap"></div>
 
-      <!-- ── Agent: Explorer (depth 1) ── no leading \n, tight spacing -->
+      <!-- ── Agent: Explorer (depth 1) — no leading \n, tight spacing -->
       <div class="agent-block d1">
         <div class="agent-header">
           <span class="cyan">◆</span>
@@ -584,7 +584,7 @@ sessions...
     </div>
   </div>
 
-  <!-- Side-by-side comparison: Current implementation vs Polished -->
+  <!-- Side-by-side comparison diffs -->
   <div class="cs" style="margin-top:32px;">
     <div class="cs-title">Fix Details</div>
   </div>
@@ -620,8 +620,8 @@ sessions...
   </div>
 
   <!-- Fix C: Spacing -->
-  <div class="cs" style="margin-bottom:80px;"><div class="cs-desc" style="font-size:12px; color:#ff5555; margin-bottom:4px;">Fix C: No blank line before agents, blank line after completion</div></div>
-  <div class="diff-panel" style="margin-bottom:80px;">
+  <div class="cs"><div class="cs-desc" style="font-size:12px; color:#ff5555; margin-bottom:4px;">Fix C: No blank line before agents, blank line after completion</div></div>
+  <div class="diff-panel">
     <div class="diff-side"><div class="diff-header bh">Current (gap before agent)</div><div class="diff-body">
       <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Todo: update 3 items</span> <span class="dim">(done)</span></div>
       <div class="line gap" style="background:#331111; color:#ff5555; font-size:10px; text-align:center;">← extra blank line</div>
@@ -681,8 +681,8 @@ sessions...
     </div></div>
     <div class="diff-side"><div class="diff-header ah">After</div><div class="diff-body">
       <div class="read-group" style="padding-left:0;">
-        <div class="rg-line"><span>▸ Read: formatting.py</span><span class="rg-result">(512 lines)</span></div>
-        <div class="rg-line"><span>▸ Read: rich_output.py</span><span class="rg-result">(406 lines)</span></div>
+        <div class="rg-line"><span>▸ Read: formatting.py</span> <span class="dim">→</span> <span class="rg-result">(512L)</span></div>
+        <div class="rg-line"><span>▸ Read: rich_output.py</span> <span class="dim">→</span> <span class="rg-result">(406L)</span></div>
       </div>
     </div></div>
   </div>
@@ -703,8 +703,8 @@ sessions...
           <span class="cyan">◆</span><span class="cyan bold">Explorer</span>
           <span class="badge explorer">explorer</span><span class="dim">— Survey codebase</span>
         </div>
-        <div style="font-size:12px; color:#7ee8fa;">  ▸ Read: __init__.py <span class="dim">(395 lines)</span></div>
-        <div style="font-size:12px; color:#7ee8fa;">  ▸ Read: formatting.py <span class="dim">(512 lines)</span></div>
+        <div style="font-size:12px; color:#7ee8fa;">  ▸ Read: __init__.py <span class="dim">→ (395L)</span></div>
+        <div style="font-size:12px; color:#7ee8fa;">  ▸ Read: formatting.py <span class="dim">→ (512L)</span></div>
         <div style="font-size:11px; color:#555; margin-top:4px; padding-top:4px; border-top:1px dotted #222;">✓ Complete · 7/7 · ⏱ 01:29</div>
       </div>
     </div></div>

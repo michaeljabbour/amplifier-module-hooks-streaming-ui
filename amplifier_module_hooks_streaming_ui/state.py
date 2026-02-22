@@ -22,18 +22,6 @@ class Phase(Enum):
     ERROR = auto()  # Error state
 
 
-# Human-readable state names for status bar
-PHASE_DISPLAY = {
-    Phase.IDLE: "Ready",
-    Phase.THINKING: "Thinking…",
-    Phase.STREAMING: "Responding…",
-    Phase.TOOL_CALLING: "Calling tool…",
-    Phase.TOOL_RUNNING: "Running…",
-    Phase.COMPLETE: "Done",
-    Phase.ERROR: "Error",
-}
-
-
 @dataclass
 class ToolCall:
     """Represents a tool call in progress."""
@@ -52,17 +40,6 @@ class SessionMetrics:
     cache_read_tokens: int = 0
     cache_create_tokens: int = 0
     tool_calls: int = 0
-    thinking_time: float = 0.0  # seconds spent in thinking blocks
-
-    @property
-    def total_tokens(self) -> int:
-        """Total tokens used."""
-        return (
-            self.input_tokens
-            + self.output_tokens
-            + self.cache_read_tokens
-            + self.cache_create_tokens
-        )
 
 
 @dataclass
@@ -179,28 +156,15 @@ class StateManager:
             return self.sessions.get(self.root_session_id)
         return None
 
-    def get_current(self) -> Optional[SessionState]:
-        """Get the currently active session."""
-        if self._current_session_id:
-            return self.sessions.get(self._current_session_id)
-        return self.get_root()
-
-    def set_current(self, session_id: str) -> None:
-        """Set the current active session."""
-        if session_id in self.sessions:
-            self._current_session_id = session_id
-
     def transition(self, session_id: str, phase: Phase) -> None:
         """Transition a session to a new phase."""
         if session_id in self.sessions:
             old_phase = self.sessions[session_id].phase
             self.sessions[session_id].phase = phase
 
-            # Track thinking time
+            # Track thinking start/end for elapsed display
             state = self.sessions[session_id]
             if old_phase == Phase.THINKING and state.thinking_start:
-                elapsed = (datetime.now() - state.thinking_start).total_seconds()
-                state.metrics.thinking_time += elapsed
                 state.thinking_start = None
             elif phase == Phase.THINKING:
                 state.thinking_start = datetime.now()

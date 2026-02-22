@@ -288,76 +288,6 @@ def format_result_summary(name: str, result: Any, is_error: bool = False) -> str
 
 
 # ============================================================================
-# Tool Input Formatting (expanded detail view)
-# ============================================================================
-
-
-def format_tool_input(
-    name: str, tool_input: dict[str, Any], cwd: Path | None = None
-) -> str:
-    """Format tool input as a multi-line plain-text block for expanded display.
-
-    This is the detailed view, NOT the one-line header (that's format_tool_header).
-    """
-    key = name.lower()
-
-    if key == "write_file":
-        content = tool_input.get("content", "")
-        preview = content[:400] + ("..." if len(content) > 400 else "")
-        return preview
-
-    if key == "read_file":
-        path = make_relative(tool_input.get("file_path", "?"), cwd)
-        offset = tool_input.get("offset")
-        limit = tool_input.get("limit")
-        if isinstance(offset, int) or isinstance(limit, int):
-            start = offset if isinstance(offset, int) else 1
-            end = f"{start + limit}" if isinstance(limit, int) else "end"
-            return f"{path} (lines {start}-{end})"
-        return path
-
-    if key in ("bash", "shell"):
-        return tool_input.get("command", "?")
-
-    if key == "glob":
-        pattern = tool_input.get("pattern", "?")
-        path = tool_input.get("path")
-        if path and path != ".":
-            return f"{pattern} in {path}"
-        return pattern
-
-    if key == "grep":
-        pattern = tool_input.get("pattern", "?")
-        path = tool_input.get("path")
-        if path and path != ".":
-            return f"{pattern} in {path}"
-        return pattern
-
-    if key == "edit_file":
-        path = make_relative(tool_input.get("file_path", "?"), cwd)
-        old = tool_input.get("old_string", "")
-        new = tool_input.get("new_string", "")
-        diff = format_diff_text(old, new)
-        return f"{path}\n{diff}"
-
-    if key == "delegate":
-        agent = tool_input.get("agent", "")
-        instruction = tool_input.get("instruction", "")
-        parts = []
-        if agent:
-            parts.append(f"Agent: {agent}")
-        if instruction:
-            parts.append(f"Instruction: {instruction}")
-        return "\n".join(parts)
-
-    # Fallback: JSON dump
-    try:
-        return json.dumps(tool_input, indent=2, default=str)
-    except Exception:
-        return str(tool_input)
-
-
-# ============================================================================
 # Diff Utilities
 # ============================================================================
 
@@ -382,36 +312,6 @@ def count_diff_changes(old: str, new: str) -> tuple[int, int]:
             deletions += i2 - i1
             additions += j2 - j1
     return additions, deletions
-
-
-def format_diff_text(old: str, new: str, max_len: int = MAX_DIFF_PREVIEW) -> str:
-    """Format a unified-style diff as plain text with +/- prefixes.
-
-    The rendering layer can add color (red for -, green for +) on top.
-    """
-    old_preview = old[:max_len] + ("..." if len(old) > max_len else "")
-    new_preview = new[:max_len] + ("..." if len(new) > max_len else "")
-    old_lines = old_preview.splitlines() if old_preview else []
-    new_lines = new_preview.splitlines() if new_preview else []
-
-    sm = difflib.SequenceMatcher(None, old_lines, new_lines)
-    result_lines: list[str] = []
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        if tag == "equal":
-            for line in old_lines[i1:i2]:
-                result_lines.append(f"  {line}")
-        elif tag == "delete":
-            for line in old_lines[i1:i2]:
-                result_lines.append(f"- {line}")
-        elif tag == "insert":
-            for line in new_lines[j1:j2]:
-                result_lines.append(f"+ {line}")
-        elif tag == "replace":
-            for line in old_lines[i1:i2]:
-                result_lines.append(f"- {line}")
-            for line in new_lines[j1:j2]:
-                result_lines.append(f"+ {line}")
-    return "\n".join(result_lines)
 
 
 # ============================================================================
@@ -468,42 +368,6 @@ def extract_output(result: Any) -> str:
         return "\n".join(str(item) for item in result[:20])
 
     return str(result)
-
-
-# ============================================================================
-# Misc Utilities
-# ============================================================================
-
-_EXT_TO_LANG: dict[str, str] = {
-    ".py": "python",
-    ".js": "javascript",
-    ".ts": "typescript",
-    ".jsx": "jsx",
-    ".tsx": "tsx",
-    ".rs": "rust",
-    ".go": "go",
-    ".rb": "ruby",
-    ".java": "java",
-    ".c": "c",
-    ".cpp": "cpp",
-    ".h": "c",
-    ".hpp": "cpp",
-    ".css": "css",
-    ".html": "html",
-    ".json": "json",
-    ".yaml": "yaml",
-    ".yml": "yaml",
-    ".toml": "toml",
-    ".md": "markdown",
-    ".sh": "bash",
-    ".bash": "bash",
-}
-
-
-def get_lang_from_path(path: str) -> str:
-    """Guess language from file extension for syntax highlighting."""
-    ext = Path(path).suffix.lower()
-    return _EXT_TO_LANG.get(ext, "")
 
 
 def is_error_result(result: Any) -> bool:

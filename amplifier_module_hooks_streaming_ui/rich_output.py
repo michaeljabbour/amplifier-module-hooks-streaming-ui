@@ -16,14 +16,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 from rich.console import Console
-from rich.markdown import Markdown
-from rich.rule import Rule
 from rich.theme import Theme
 
 from .cost import CostEstimate
 from .formatting import (
     extract_output,
-    format_diff_text,
     format_result_summary,
     format_tool_header,
     is_error_result,
@@ -51,12 +48,6 @@ AMPLIFIER_THEME = Theme(
         "token.cached": "dim green",
         "status.phase": "bold yellow",
         "status.info": "dim",
-        "insight.star": "bold yellow",
-        "insight.text": "yellow",
-        "insight.rule": "yellow dim",
-        "phase.header": "bold underline",
-        "diff.add": "green",
-        "diff.remove": "red",
         "error": "bold red",
     }
 )
@@ -103,11 +94,6 @@ BOX_HORIZONTAL = "\u2500"
 BULLET_TRIANGLE = "\u25b8"  # small right-pointing triangle (claudechic style)
 CHECK = "\u2713"
 CROSS = "\u2717"
-
-# Task checklist symbols
-TASK_DONE = "\u2713"  # green check
-TASK_ACTIVE = "\u25cf"  # yellow/orange bullet
-TASK_PENDING = "\u25a1"  # gray square
 
 # Depth-based colors for agent tree
 DEPTH_COLORS = ["cyan", "magenta", "green", "yellow", "blue"]
@@ -391,82 +377,6 @@ def print_inline_status(status_text: str) -> None:
     """Print a dim inline status line (fallback for when no prompt_toolkit toolbar exists)."""
     console = get_console()
     console.print(f"[dim]{status_text}[/]")
-
-
-# ============================================================================
-# Enhanced Content Blocks (claudechic-inspired)
-# ============================================================================
-
-
-def print_phase_header(text: str) -> None:
-    """Print a phase/section header: bold underlined text."""
-    console = get_console()
-    console.print()
-    console.print(f"[phase.header]{text}[/]")
-    console.print()
-
-
-def print_insight_block(text: str) -> None:
-    """Print an insight block with star and colored rules."""
-    console = get_console()
-    console.print()
-    console.print(
-        Rule(
-            "[insight.star]\u2605[/] [insight.text]Insight[/]",
-            style="insight.rule",
-            align="left",
-        )
-    )
-    console.print(f"[insight.text]{text}[/]")
-    console.print(Rule(style="insight.rule"))
-    console.print()
-
-
-def print_error_block(text: str) -> None:
-    """Print an error with red highlighting."""
-    console = get_console()
-    console.print(f"[error]{text}[/]")
-
-
-def print_markdown(text: str) -> None:
-    """Render markdown text via Rich.Markdown."""
-    console = get_console()
-    md = Markdown(text)
-    console.print(md)
-
-
-def print_diff(old: str, new: str, file_path: str = "") -> None:
-    """Print a colored diff between old and new text."""
-    console = get_console()
-    diff_text = format_diff_text(old, new)
-
-    if file_path:
-        console.print(f"[dim]{file_path}[/]")
-
-    for line in diff_text.split("\n"):
-        if line.startswith("+ "):
-            console.print(f"[diff.add]{line}[/]")
-        elif line.startswith("- "):
-            console.print(f"[diff.remove]{line}[/]")
-        else:
-            console.print(f"[dim]{line}[/]")
-
-
-def print_task_checklist(
-    items: list[tuple[str, str]],
-    depth: int = 0,
-) -> None:
-    """Print a task checklist with three states -- inline style (no box)."""
-    console = get_console()
-    prefix = _depth_prefix(depth)
-
-    for status, label in items:
-        if status == "done":
-            console.print(f"{prefix}  [green]{TASK_DONE}[/] [green]{label}[/]")
-        elif status == "active":
-            console.print(f"{prefix}  [yellow]{TASK_ACTIVE}[/] {label}")
-        else:
-            console.print(f"{prefix}  [dim]{TASK_PENDING} {label}[/]")
 
 
 # ============================================================================
