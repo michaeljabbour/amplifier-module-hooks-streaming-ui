@@ -89,3 +89,12 @@ def render_token_usage(
         input_tokens, output_tokens, cache_read, cache_create, elapsed, cost, depth
     )
     return ""
+
+
+def render_tool_merged(
+    header: str, tool_name: str, result: Any, success: bool = True,
+    depth: int = 0, max_lines: int = MAX_TOOL_OUTPUT_LINES,
+) -> str:
+    from .rich_output import print_tool_merged
+    print_tool_merged(header, tool_name, result, success, depth, max_lines)
+    return ""

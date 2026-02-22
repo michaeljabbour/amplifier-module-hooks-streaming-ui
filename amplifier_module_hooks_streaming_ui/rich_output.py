@@ -113,6 +113,25 @@ TASK_DONE = "\u2713"      # green check
 TASK_ACTIVE = "\u25cf"    # yellow/orange bullet
 TASK_PENDING = "\u25a1"   # gray square
 
+# Depth-based colors for agent tree
+DEPTH_COLORS = ["cyan", "magenta", "green", "yellow", "blue"]
+
+
+def _depth_prefix(depth: int) -> str:
+    """Build a colored tree-branch prefix for the given nesting depth.
+
+    depth=0 -> ""
+    depth=1 -> "| "  (cyan)
+    depth=2 -> "| | "  (cyan, magenta)
+    """
+    if depth == 0:
+        return ""
+    parts = []
+    for d in range(1, depth + 1):
+        color = DEPTH_COLORS[(d - 1) % len(DEPTH_COLORS)]
+        parts.append(f"[{color}]{BOX_VERTICAL}[/] ")
+    return "".join(parts)
+
 
 # ============================================================================
 # Session Rendering
@@ -122,14 +141,17 @@ TASK_PENDING = "\u25a1"   # gray square
 def print_session_header(
     state: SessionState, cost: Optional[CostEstimate] = None
 ) -> None:
-    """Print session header as a subtle rule line."""
+    """Print session header -- agent tree style for nested sessions."""
     console = get_console()
 
     if state.depth > 0:
-        indent = "  " * state.depth
-        agent_name = _extract_agent_name(state.session_id)
+        prefix = _depth_prefix(state.depth)
+        color = DEPTH_COLORS[(state.depth - 1) % len(DEPTH_COLORS)]
+        agent_name = state.agent_name or _extract_agent_name(state.session_id)
+        type_part = f" [dim]({state.agent_type})[/]" if state.agent_type else ""
+        desc_part = f" [dim]\u2014 {state.agent_desc}[/]" if state.agent_desc else ""
         console.print(
-            f"\n{indent}[session.sub]{BOX_CORNER_TL}{BOX_HORIZONTAL} {agent_name}[/]"
+            f"\n{prefix}[{color} bold]{BULLET_TRIANGLE} {agent_name}[/]{type_part}{desc_part}"
         )
     else:
         console.print()
@@ -138,19 +160,27 @@ def print_session_header(
 def print_session_footer(
     state: SessionState, cost: Optional[CostEstimate] = None
 ) -> None:
-    """Print session footer for nested sessions."""
+    """Print session footer -- compact summary line for nested sessions."""
     if state.depth == 0:
         return
 
     console = get_console()
-    indent = "  " * state.depth
+    prefix = _depth_prefix(state.depth)
+    color = DEPTH_COLORS[(state.depth - 1) % len(DEPTH_COLORS)]
     elapsed = state.elapsed_formatted()
-    cost_str = cost.format() if cost else ""
-    cost_part = f" | {cost_str}" if cost_str else ""
 
-    console.print(
-        f"{indent}{BOX_CORNER_BL}{BOX_HORIZONTAL} [session.footer][{elapsed}]{cost_part}[/]"
-    )
+    parts = [f"[{color}]{CHECK}[/] [{color}]Complete[/]"]
+
+    if state.metrics.tool_calls > 0:
+        parts.append(f"[dim]{state.metrics.tool_calls} tool calls[/]")
+
+    parts.append(f"[dim]{BULLET_TRIANGLE} {elapsed}[/]")
+
+    cost_str = cost.format() if cost else ""
+    if cost_str:
+        parts.append(f"[dim]{cost_str}[/]")
+
+    console.print(f"{prefix}{'  '.join(parts)}")
 
 
 # ============================================================================
@@ -164,17 +194,11 @@ def print_tool_call(
     depth: int = 0,
     cwd: Path | None = None,
 ) -> None:
-    """Print a tool invocation line.
-
-    Uses smart headers from formatting.py:
-        ▸ Edit: src/auth.py (+3, -1)
-        ▸ Bash: npm test
-        ▸ Task: Survey auth/ (explorer)
-    """
+    """Print a tool invocation line (used for slow tools like Bash/delegate)."""
     console = get_console()
-    indent = "  " * depth
+    prefix = _depth_prefix(depth)
     header = format_tool_header(tool_name, tool_input, cwd)
-    console.print(f"{indent}[tool.bullet]{BULLET_TRIANGLE}[/] [tool.header]{header}[/]")
+    console.print(f"{prefix}[tool.bullet]{BULLET_TRIANGLE}[/] [tool.header]{header}[/]")
 
 
 def print_tool_result(
@@ -184,13 +208,9 @@ def print_tool_result(
     depth: int = 0,
     max_lines: int = 10,
 ) -> None:
-    """Print a tool result with smart summary.
-
-    Successful: ▸ Edit: src/auth.py (+3, -1) (done)
-    Failed:     ▸ Bash: npm test (error)
-    """
+    """Print a tool result -- used when header was already printed (slow tools)."""
     console = get_console()
-    indent = "  " * depth
+    prefix = _depth_prefix(depth)
     is_err = not success or is_error_result(result)
     summary = format_result_summary(tool_name, result, is_error=is_err)
 
@@ -200,21 +220,59 @@ def print_tool_result(
         style = "tool.result.dim"
 
     if summary:
-        console.print(f"{indent}  [{style}]{summary}[/]")
+        console.print(f"{prefix}  [{style}]{summary}[/]")
 
-    # For errors, show the actual error content
     if is_err:
         output = extract_output(result)
         if output.strip():
             lines = output.strip().split("\n")
             show_lines = lines[:max_lines]
             for line in show_lines:
-                console.print(f"{indent}  [error]{line}[/]")
+                console.print(f"{prefix}  [error]{line}[/]")
             if len(lines) > max_lines:
                 hidden = len(lines) - max_lines
-                console.print(
-                    f"{indent}  [tool.result.dim]... +{hidden} lines[/]"
-                )
+                console.print(f"{prefix}  [tool.result.dim]... +{hidden} lines[/]")
+
+
+def print_tool_merged(
+    header: str,
+    tool_name: str,
+    result: Any,
+    success: bool = True,
+    depth: int = 0,
+    max_lines: int = 10,
+) -> None:
+    """Print a single merged line: header (result).
+
+    Used for fast tools where we buffer the header and print
+    everything at once in tool:post.
+    """
+    console = get_console()
+    prefix = _depth_prefix(depth)
+    is_err = not success or is_error_result(result)
+    summary = format_result_summary(tool_name, result, is_error=is_err)
+
+    if is_err:
+        style = "tool.result.error"
+    else:
+        style = "tool.result.dim"
+
+    result_part = f" [{style}]{summary}[/]" if summary else ""
+    console.print(
+        f"{prefix}[tool.bullet]{BULLET_TRIANGLE}[/] [tool.header]{header}[/]{result_part}"
+    )
+
+    # For errors, still show detail lines below
+    if is_err:
+        output = extract_output(result)
+        if output.strip():
+            lines = output.strip().split("\n")
+            show_lines = lines[:max_lines]
+            for line in show_lines:
+                console.print(f"{prefix}  [error]{line}[/]")
+            if len(lines) > max_lines:
+                hidden = len(lines) - max_lines
+                console.print(f"{prefix}  [tool.result.dim]... +{hidden} lines[/]")
 
 
 # ============================================================================
@@ -222,29 +280,45 @@ def print_tool_result(
 # ============================================================================
 
 
-def print_thinking_block(text: str, depth: int = 0) -> None:
-    """Print a thinking/reasoning block - compact mode.
+def print_thinking_block(
+    text: str, depth: int = 0, max_preview_lines: int = 3
+) -> None:
+    """Print a thinking block summary with optional preview.
 
-    Shows only a brief indicator, not full reasoning text.
-    The full text is available in the session transcript.
+    In compact mode (max_preview_lines=0), shows nothing (spinner covers it).
+    With preview enabled, shows first N lines of the thinking text.
     """
-    # Intentionally does nothing in compact mode.
-    # Thinking start indicator is printed by print_thinking_start().
-    # Elapsed time is printed by print_thinking_elapsed().
-    pass
+    if not text or max_preview_lines <= 0:
+        return
+
+    console = get_console()
+    prefix = _depth_prefix(depth)
+    lines = text.strip().split("\n")
+    show = lines[:max_preview_lines]
+
+    for line in show:
+        # Truncate long lines
+        display = line[:120] + ("..." if len(line) > 120 else "")
+        console.print(f"{prefix}  [thinking.text]{display}[/]")
+
+    if len(lines) > max_preview_lines:
+        remaining = len(lines) - max_preview_lines
+        console.print(
+            f"{prefix}  [thinking.elapsed]... +{remaining} lines[/]"
+        )
 
 
 def print_thinking_start(depth: int = 0) -> None:
     """Print compact thinking indicator when reasoning begins."""
     console = get_console()
-    indent = "  " * depth
-    console.print(f"{indent}[thinking.border]Thinking...[/]")
+    prefix = _depth_prefix(depth)
+    console.print(f"{prefix}[thinking.border]\u2847 Thinking...[/]")
 
 
 def print_thinking_elapsed(seconds: float, depth: int = 0) -> None:
-    """Print elapsed thinking time: ⏱ Reasoned for 2m 44s"""
+    """Print elapsed thinking time with check mark."""
     console = get_console()
-    indent = "  " * depth
+    prefix = _depth_prefix(depth)
 
     if seconds < 60:
         time_str = f"{int(seconds)}s"
@@ -253,7 +327,7 @@ def print_thinking_elapsed(seconds: float, depth: int = 0) -> None:
         secs = int(seconds % 60)
         time_str = f"{minutes}m {secs}s"
 
-    console.print(f"{indent}[thinking.elapsed]\u23f1 Reasoned for {time_str}[/]")
+    console.print(f"{prefix}[thinking.elapsed]{CHECK} Reasoned for {time_str}[/]")
 
 
 # ============================================================================
@@ -272,15 +346,13 @@ def print_token_usage(
 ) -> None:
     """Print token usage summary line."""
     console = get_console()
-    indent = "  " * depth
+    prefix = _depth_prefix(depth)
 
     total_input = input_tokens + cache_read + cache_create
     total = total_input + output_tokens
 
-    # Build parts
     parts: list[str] = []
 
-    # Input with cache info
     if cache_read > 0:
         cache_pct = int((cache_read / total_input) * 100) if total_input > 0 else 0
         parts.append(f"\u2193 {total_input:,} ({cache_pct}% cached)")
@@ -299,10 +371,7 @@ def print_token_usage(
         parts.append(cost.format())
 
     line = " \u00b7 ".join(parts)
-    console.print(f"{indent}[token.label]{BOX_VERTICAL} {line}[/]")
-
-
-
+    console.print(f"{prefix}[token.label]{line}[/]")
 
 
 # ============================================================================
@@ -319,12 +388,7 @@ def print_phase_header(text: str) -> None:
 
 
 def print_insight_block(text: str) -> None:
-    """Print an insight block with star and colored rules.
-
-    ★ Insight ──────────────────
-    The design pattern here is...
-    ────────────────────────────
-    """
+    """Print an insight block with star and colored rules."""
     console = get_console()
     console.print()
     console.print(Rule(
@@ -371,25 +435,17 @@ def print_task_checklist(
     items: list[tuple[str, str]],
     depth: int = 0,
 ) -> None:
-    """Print a task checklist with three states.
-
-    items: list of (status, label) where status is "done", "active", or "pending"
-
-    Output:
-    ✓ Phase 0: Upgrade Textual
-    ● Phase 1: Port widget (active)
-    □ Phase 2: CSS migration
-    """
+    """Print a task checklist with three states -- inline style (no box)."""
     console = get_console()
-    indent = "  " * depth
+    prefix = _depth_prefix(depth)
 
     for status, label in items:
         if status == "done":
-            console.print(f"{indent}[green]{TASK_DONE}[/] {label}")
+            console.print(f"{prefix}  [green]{TASK_DONE}[/] [green]{label}[/]")
         elif status == "active":
-            console.print(f"{indent}[yellow]{TASK_ACTIVE}[/] {label}")
+            console.print(f"{prefix}  [yellow]{TASK_ACTIVE}[/] {label}")
         else:
-            console.print(f"{indent}[dim]{TASK_PENDING}[/] [dim]{label}[/]")
+            console.print(f"{prefix}  [dim]{TASK_PENDING} {label}[/]")
 
 
 # ============================================================================

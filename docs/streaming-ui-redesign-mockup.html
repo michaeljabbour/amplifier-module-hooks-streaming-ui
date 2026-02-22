@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amplifier Streaming UI — Redesign Mockup</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e; color: #e0e0e0;
+    font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 13px; line-height: 1.5;
+  }
+
+  /* ── Nav ── */
+  .nav {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; background: #16162a;
+    border-bottom: 1px solid #2a2a4a; padding: 0 20px;
+  }
+  .nav-tab {
+    padding: 12px 24px; cursor: pointer; color: #888;
+    font-size: 13px; font-weight: 500;
+    border-bottom: 2px solid transparent; transition: all 0.2s;
+  }
+  .nav-tab:hover { color: #ccc; }
+  .nav-tab.active { color: #7ee8fa; border-bottom-color: #7ee8fa; }
+
+  /* ── Views ── */
+  .view { display: none; padding: 0 0 120px 0; }
+  .view.active { display: block; }
+
+  /* ── Terminal chrome ── */
+  .terminal {
+    max-width: 960px; margin: 24px auto;
+    background: #0d0d1a; border-radius: 10px;
+    overflow: hidden; border: 1px solid #2a2a4a;
+  }
+  .terminal-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px; background: #16162a;
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot.r { background: #ff5f56; } .dot.y { background: #ffbd2e; } .dot.g { background: #27c93f; }
+  .terminal-title { flex: 1; text-align: center; color: #666; font-size: 12px; }
+  .terminal-body { padding: 16px 20px; min-height: 400px; overflow-x: auto; }
+
+  /* ── Color tokens ── */
+  .dim { color: #555; } .cyan { color: #7ee8fa; } .green { color: #50fa7b; }
+  .yellow { color: #f1fa8c; } .red { color: #ff5555; } .magenta { color: #ff79c6; }
+  .bold { font-weight: 600; } .italic { font-style: italic; }
+
+  .line { min-height: 20px; white-space: pre-wrap; word-break: break-all; }
+  .line.gap { min-height: 10px; }
+
+  /* ── Before: tool / result / token ── */
+  .result-line { color: #555; padding-left: 16px; }
+  .token-line  { color: #555; }
+  .thinking-line { color: #555; font-style: italic; }
+
+  /* ── Before: todo box ── */
+  .todo-box {
+    border: 1px solid #333; border-radius: 6px;
+    margin: 8px 0 8px 16px; padding: 10px 14px; max-width: 520px;
+  }
+  .todo-box .title { color: #666; font-size: 12px; margin-bottom: 6px; }
+  .todo-item { margin: 2px 0; }
+  .todo-check  { color: #50fa7b; }
+  .todo-active { color: #f1fa8c; }
+  .todo-pending { color: #444; }
+  .pb { margin-top: 8px; display: flex; align-items: center; gap: 8px; }
+  .bar-track { width: 200px; height: 6px; background: #222; border-radius: 3px; overflow: hidden; }
+  .bar-fill  { height: 100%; background: #50fa7b; border-radius: 3px; }
+  .bar-label { color: #555; font-size: 11px; }
+
+  /* ============================================================
+     AFTER (redesign) styles
+     ============================================================ */
+
+  /* Agent blocks with colored left border */
+  .agent-block { margin: 12px 0; border-left: 2px solid #333; padding-left: 14px; }
+  .agent-block.d1 { border-left-color: #7ee8fa; }
+  .agent-block.d2 { border-left-color: #bd93f9; margin-left: 20px; }
+  .agent-block.d3 { border-left-color: #50fa7b; margin-left: 40px; }
+  .agent-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .agent-name  { font-weight: 600; }
+  .agent-desc  { color: #666; font-size: 12px; }
+  .agent-footer {
+    color: #555; font-size: 11px; margin-top: 4px;
+    padding-top: 4px; border-top: 1px dotted #222;
+  }
+
+  /* Badge */
+  .badge {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px;
+  }
+  .badge.explorer  { background: #1a3a4a; color: #7ee8fa; }
+  .badge.architect { background: #2a1a3a; color: #bd93f9; }
+
+  /* Inline todos (no box) */
+  .todo-inline { margin: 6px 0; padding: 6px 0; }
+  .todo-inline .item { display: flex; align-items: center; gap: 6px; padding: 1px 0; font-size: 12px; }
+  .todo-inline .icon { width: 14px; text-align: center; flex-shrink: 0; }
+  .todo-inline .done .icon, .todo-inline .done .label { color: #50fa7b; }
+  .todo-inline .active .icon  { color: #f1fa8c; }
+  .todo-inline .active .label { color: #e0e0e0; }
+  .todo-inline .pending .icon, .todo-inline .pending .label { color: #444; }
+  .mini-progress { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .mini-bar  { width: 100px; height: 3px; background: #222; border-radius: 2px; overflow: hidden; }
+  .mini-fill { height: 100%; border-radius: 2px; }
+  .mini-fill.green  { background: #50fa7b; }
+  .mini-fill.yellow { background: #f1fa8c; }
+  .mini-label { color: #555; font-size: 10px; }
+
+  /* Grouped compact reads */
+  .read-group { margin: 2px 0; padding: 2px 0 2px 22px; }
+  .rg-line { display: flex; align-items: baseline; color: #7ee8fa; font-size: 12px; line-height: 1.4; }
+  .rg-result { color: #555; margin-left: 6px; }
+
+  /* Thinking compact */
+  .thinking-compact { display: flex; align-items: center; gap: 6px; color: #666; font-style: italic; padding: 2px 0; }
+
+  /* Token summary (end-of-turn only) */
+  .token-summary { color: #444; font-size: 11px; padding: 4px 0; border-top: 1px solid #1a1a30; margin: 4px 0; }
+
+  /* Spinner animation */
+  @keyframes spin { 0%{content:'⠋'}10%{content:'⠙'}20%{content:'⠹'}30%{content:'⠸'}40%{content:'⠼'}50%{content:'⠴'}60%{content:'⠦'}70%{content:'⠧'}80%{content:'⠇'}90%{content:'⠏'} }
+  .spinner::before { content: '⠋'; animation: spin .8s steps(1) infinite; color: #f1fa8c; }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .pulse { animation: pulse 1.5s ease-in-out infinite; }
+
+  /* ── Footer bar ── */
+  .footer-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: #0d0d1a; border-top: 1px solid #2a2a4a; z-index: 200; font-size: 12px;
+  }
+  .footer-input { padding: 8px 20px; display: flex; align-items: center; gap: 6px; }
+  .footer-caret { color: #50fa7b; font-weight: 700; }
+  .footer-cursor { display: inline-block; width: 8px; height: 16px; background: #50fa7b; animation: pulse 1s ease-in-out infinite; vertical-align: text-bottom; }
+  .footer-status {
+    padding: 4px 20px 6px; display: flex; align-items: center; gap: 16px;
+    background: #16162a; color: #555; font-size: 11px; flex-wrap: wrap;
+  }
+  .footer-status .sep { color: #2a2a4a; }
+
+  /* ── Side-by-side diff panels ── */
+  .diff-panel { max-width: 960px; margin: 24px auto; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .diff-side  { background: #0d0d1a; border-radius: 10px; border: 1px solid #2a2a4a; overflow: hidden; }
+  .diff-header { padding: 8px 14px; background: #16162a; font-size: 12px; font-weight: 600; }
+  .diff-header.bh { color: #ff5555; } .diff-header.ah { color: #50fa7b; }
+  .diff-body { padding: 12px 14px; font-size: 12px; }
+
+  /* ── Changes view ── */
+  .cs { max-width: 960px; margin: 24px auto; }
+  .cs-title { font-size: 16px; font-weight: 600; color: #e0e0e0; margin-bottom: 8px; }
+  .cs-desc  { color: #888; font-size: 13px; margin-bottom: 16px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ Nav ═══════════════════════════ -->
+<div class="nav">
+  <div class="nav-tab active" onclick="go('before')">Current (Before)</div>
+  <div class="nav-tab" onclick="go('after')">Redesign (After)</div>
+  <div class="nav-tab" onclick="go('changes')">Changes Summary</div>
+  <div class="nav-tab" onclick="go('footer')">Footer Bar States</div>
+</div>
+
+<!-- ═══════════════════════════ BEFORE ═══════════════════════════ -->
+<div class="view active" id="v-before">
+  <div class="terminal">
+    <div class="terminal-bar">
+      <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+      <div class="terminal-title">amplifier-module-hooks-streaming-ui — amplifier</div>
+    </div>
+    <div class="terminal-body">
+
+      <!-- User prompt -->
+      <div class="line"><span class="green bold">></span> what does this module do and how would you improve it?</div>
+      <div class="line gap"></div>
+      <div class="line thinking-line">Thinking...</div>
+      <div class="line token-line">│ ↓ 87,457 (49% cached) · ↑ 625 · Σ 88,082 · ⏱ 00:28</div>
+
+      <!-- Delegate calls (flat, no hierarchy) -->
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Task: Survey the entire codebase at .. I need a comprehe... (explorer)</span></div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Task: Review the codebase at . in REVIEW mode. This is ... (zen-architect)</span></div>
+
+      <div class="line thinking-line">Thinking...</div>
+      <div class="line token-line">│ ↓ 21,922 (83% cached) · ↑ 326 · Σ 22,248 · ⏱ 00:06</div>
+
+      <!-- Sub-agent todo — looks identical to parent -->
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Todo: create 7 items</span></div>
+      <div class="line result-line">(done)</div>
+      <div class="todo-box">
+        <div class="title">┌─ Todo ─────────────────────────────────────────┐</div>
+        <div class="todo-item"><span class="todo-active bold">▶</span> <span class="yellow">Mapping top-level file structure</span></div>
+        <div class="todo-item"><span class="todo-pending">○</span> <span class="dim">Read pyproject.toml for metadata</span></div>
+        <div class="todo-item"><span class="todo-pending">○</span> <span class="dim">Read all Python source files</span></div>
+        <div class="todo-item"><span class="todo-pending">○</span> <span class="dim">Read test files</span></div>
+        <div class="todo-item"><span class="todo-pending">○</span> <span class="dim">Read docs/README if present</span></div>
+        <div class="todo-item"><span class="todo-pending">○</span> <span class="dim">Trace event flow and hook lifecycle</span></div>
+        <div class="todo-item"><span class="todo-pending">○</span> <span class="dim">Synthesize comprehensive report</span></div>
+        <div class="pb"><div class="bar-track"><div class="bar-fill" style="width:0%"></div></div><div class="bar-label">0/7</div></div>
+      </div>
+
+      <!-- Two-line tool calls -->
+      <div class="line token-line">│ ↓ 41,651 (90% cached) · ↑ 491 · Σ 42,142 · ⏱ 00:11</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: pyproject.toml</span></div>
+      <div class="line result-line">(29 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: README.md</span></div>
+      <div class="line result-line">(145 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: amplifier_module_hooks_streaming_ui/__init__.py</span></div>
+      <div class="line result-line">(395 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: amplifier_module_hooks_streaming_ui/formatting.py</span></div>
+      <div class="line result-line">(512 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: amplifier_module_hooks_streaming_ui/rich_output.py</span></div>
+      <div class="line result-line">(406 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: amplifier_module_hooks_streaming_ui/state.py</span></div>
+      <div class="line result-line">(177 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: amplifier_module_hooks_streaming_ui/cost.py</span></div>
+      <div class="line result-line">(137 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: amplifier_module_hooks_streaming_ui/renderer.py</span></div>
+      <div class="line result-line">(91 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: amplifier_module_hooks_streaming_ui/terminal.py</span></div>
+      <div class="line result-line">(40 lines)</div>
+      <div class="line token-line">│ ↓ 92,645 (63% cached) · ↑ 768 · Σ 93,413 · ⏱ 00:17</div>
+
+      <!-- Todo update (still flat, still boxed) -->
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Todo: update 7 items</span></div>
+      <div class="line result-line">(done)</div>
+      <div class="todo-box">
+        <div class="title">┌─ Todo ─────────────────────────────────────────┐</div>
+        <div class="todo-item"><span class="todo-check">✓</span> Map complete directory tree structure</div>
+        <div class="todo-item"><span class="todo-check">✓</span> Inventory all Python files with line counts</div>
+        <div class="todo-item"><span class="todo-check">✓</span> Read package configuration files</div>
+        <div class="todo-item"><span class="todo-check">✓</span> Read README and documentation files</div>
+        <div class="todo-item"><span class="todo-check">✓</span> Read __init__.py files for module exports</div>
+        <div class="todo-item"><span class="todo-active bold">▶</span> <span class="yellow">Reading test files</span></div>
+        <div class="todo-item"><span class="todo-pending">○</span> <span class="dim">Synthesize comprehensive report</span></div>
+        <div class="pb"><div class="bar-track"><div class="bar-fill" style="width:71%"></div></div><div class="bar-label">5/7</div></div>
+      </div>
+
+      <div class="line thinking-line">Thinking...</div>
+      <div class="line token-line">│ ↓ 152,874 (66% cached) · ↑ 1,580 · Σ 154,454 · ⏱ 03:26</div>
+
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: tests/test_streaming_ui.py</span></div>
+      <div class="line result-line">(423 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: tests/test_validation.py</span></div>
+      <div class="line result-line">(14 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: tests/conftest.py</span></div>
+      <div class="line result-line">(11 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: archive/ansi_markdown.py</span></div>
+      <div class="line result-line">(146 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: archive/tables.py</span></div>
+      <div class="line result-line">(160 lines)</div>
+
+      <div class="line token-line">│ ↓ 214,739 (57% cached) · ↑ 1,821 · Σ 216,560 · ⏱ 03:31</div>
+      <div class="line token-line">│ ↓ 276,887 (51% cached) · ↑ 2,189 · Σ 279,076 · ⏱ 03:38</div>
+      <div class="line token-line">│ ↓ 339,444 (48% cached) · ↑ 5,835 · Σ 345,279 · ⏱ 04:56</div>
+      <div class="line token-line">│ ↓ 405,690 (45% cached) · ↑ 6,182 · Σ 411,872 · ⏱ 05:05</div>
+
+      <!-- Second sub-agent todo — also flat -->
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Todo: update 5 items</span></div>
+      <div class="line result-line">(done)</div>
+      <div class="todo-box">
+        <div class="title">┌─ Todo ─────────────────────────────────────────┐</div>
+        <div class="todo-item"><span class="todo-check">✓</span> Explore codebase structure and architecture</div>
+        <div class="todo-item"><span class="todo-check">✓</span> Analyze core modules and class hierarchies</div>
+        <div class="todo-item"><span class="todo-check">✓</span> Review error handling and edge cases</div>
+        <div class="todo-item"><span class="todo-check">✓</span> Assess coupling, complexity, and design patterns</div>
+        <div class="todo-item"><span class="todo-check">✓</span> Synthesize findings into actionable review</div>
+        <div class="pb"><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-label">5/5 ✓ Complete</div></div>
+      </div>
+
+      <div class="line thinking-line">Thinking...</div>
+      <div class="line token-line">│ ↓ 137,744 (44% cached) · ↑ 1,420 · Σ 139,164 · ⏱ 05:53</div>
+
+      <div class="line gap"></div>
+      <div class="line"><span class="bold cyan">Amplifier:</span></div>
+      <div class="line" style="color:#ccc; line-height:1.7;">hooks-streaming-ui is an Amplifier hook module that provides real-time, Rich-formatted console output during AI agent sessions...</div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ AFTER ═══════════════════════════ -->
+<div class="view" id="v-after">
+  <div class="terminal">
+    <div class="terminal-bar">
+      <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+      <div class="terminal-title">amplifier — hooks-streaming-ui — feature/session-indicator</div>
+    </div>
+    <div class="terminal-body">
+
+      <!-- User prompt -->
+      <div class="line" style="margin-bottom:4px;"><span class="green bold">></span> what does this module do and how would you improve it?</div>
+      <div class="line gap"></div>
+
+      <!-- Thinking with spinner -->
+      <div class="thinking-compact"><span class="spinner"></span><span>Thinking...</span></div>
+
+      <div class="line gap"></div>
+
+      <!-- ── Agent: Explorer (depth 1) ── -->
+      <div class="agent-block d1">
+        <div class="agent-header">
+          <span class="cyan">◆</span>
+          <span class="agent-name cyan">Explorer</span>
+          <span class="badge explorer">explorer</span>
+          <span class="agent-desc">— Survey the entire codebase</span>
+        </div>
+
+        <!-- Todo inline under agent -->
+        <div class="todo-inline">
+          <div class="item done"><span class="icon">✓</span><span class="label">Map directory tree structure</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Inventory Python files with line counts</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Read package configuration files</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Read README and documentation</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Read __init__.py exports</span></div>
+          <div class="item active"><span class="icon spinner"></span><span class="label">Read test files</span></div>
+          <div class="item pending"><span class="icon">□</span><span class="label">Synthesize comprehensive report</span></div>
+          <div class="mini-progress">
+            <div class="mini-bar"><div class="mini-fill yellow" style="width:75%"></div></div>
+            <div class="mini-label">5/7</div>
+          </div>
+        </div>
+
+        <!-- Compact grouped reads -->
+        <div class="read-group">
+          <div class="rg-line"><span>▸ Read: pyproject.toml</span><span class="rg-result">(29 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: README.md</span><span class="rg-result">(145 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: __init__.py</span><span class="rg-result">(395 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: formatting.py</span><span class="rg-result">(512 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: rich_output.py</span><span class="rg-result">(406 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: state.py</span><span class="rg-result">(177 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: cost.py</span><span class="rg-result">(137 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: renderer.py</span><span class="rg-result">(91 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: terminal.py</span><span class="rg-result">(40 lines)</span></div>
+        </div>
+
+        <div class="thinking-compact">
+          <span class="spinner"></span><span>Synthesizing report...</span>
+          <span class="dim" style="margin-left:auto; font-style:normal; font-size:11px;">⏱ 01:14</span>
+        </div>
+
+        <!-- Nested sub-agent (depth 2) -->
+        <div class="agent-block d2" style="margin-left:0;">
+          <div class="agent-header">
+            <span class="magenta">◆</span>
+            <span class="agent-name magenta">Deep-Scan</span>
+            <span class="badge architect">sub-explorer</span>
+            <span class="agent-desc">— Comprehensive file inventory</span>
+          </div>
+          <div class="read-group">
+            <div class="rg-line"><span>▸ Read: tests/test_streaming_ui.py</span><span class="rg-result">(423 lines)</span></div>
+            <div class="rg-line"><span>▸ Read: tests/test_validation.py</span><span class="rg-result">(14 lines)</span></div>
+            <div class="rg-line"><span>▸ Read: tests/conftest.py</span><span class="rg-result">(11 lines)</span></div>
+            <div class="rg-line"><span>▸ Read: archive/ansi_markdown.py</span><span class="rg-result">(146 lines)</span></div>
+            <div class="rg-line"><span>▸ Read: archive/tables.py</span><span class="rg-result">(160 lines)</span></div>
+          </div>
+          <div class="agent-footer">✓ Complete · 5 files read · ⏱ 00:18</div>
+        </div>
+
+        <div class="agent-footer">✓ Complete · 7/7 tasks · 14 files read · ⏱ 01:29</div>
+      </div>
+
+      <div class="line gap"></div>
+
+      <!-- ── Agent: Zen-Architect (depth 1) ── -->
+      <div class="agent-block d1">
+        <div class="agent-header">
+          <span class="cyan">◆</span>
+          <span class="agent-name cyan">Zen-Architect</span>
+          <span class="badge architect">reviewer</span>
+          <span class="agent-desc">— Review codebase quality and patterns</span>
+        </div>
+
+        <div class="todo-inline">
+          <div class="item done"><span class="icon">✓</span><span class="label">Explore codebase structure and architecture</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Analyze core modules and class hierarchies</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Review error handling and edge cases</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Assess coupling, complexity, and design patterns</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Synthesize findings into actionable review</span></div>
+          <div class="mini-progress">
+            <div class="mini-bar"><div class="mini-fill green" style="width:100%"></div></div>
+            <div class="mini-label">5/5 ✓</div>
+          </div>
+        </div>
+
+        <div class="read-group">
+          <div class="rg-line"><span>▸ Read: __init__.py</span><span class="rg-result">(395 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: formatting.py</span><span class="rg-result">(512 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: rich_output.py</span><span class="rg-result">(406 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: state.py</span><span class="rg-result">(177 lines)</span></div>
+          <div class="rg-line"><span>▸ Read: cost.py</span><span class="rg-result">(137 lines)</span></div>
+        </div>
+
+        <div class="thinking-compact" style="color:#50fa7b; font-style:normal;">
+          <span>✓</span><span>Reasoning complete</span>
+          <span class="dim" style="margin-left:auto; font-style:normal; font-size:11px;">⏱ 05:05</span>
+        </div>
+
+        <div class="agent-footer">✓ Complete · 5/5 tasks · ⏱ 05:05</div>
+      </div>
+
+      <div class="line gap"></div>
+
+      <!-- Per-prompt token summary (kept — one line at end of turn) -->
+      <div class="token-summary">↓ 405k tokens (45% cached) · ↑ 6.2k · ⏱ 05:05 · ~$1.23</div>
+
+      <div class="line gap"></div>
+      <div class="line" style="margin-bottom:8px;"><span class="bold cyan">Amplifier:</span></div>
+      <div class="line" style="color:#ccc; line-height:1.7;">
+<span class="bold" style="color:#e0e0e0;">What This Module Does</span>
+
+hooks-streaming-ui is an Amplifier hook module that provides
+real-time, Rich-formatted console output during AI agent
+sessions. It's purely observational — it never modifies system
+state, only displays information...
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer bar demo -->
+  <div class="footer-bar" id="footer-demo">
+    <div class="footer-input">
+      <span class="footer-caret">></span>
+      <span class="footer-cursor"></span>
+    </div>
+    <div class="footer-status">
+      <span style="color:#50fa7b; font-weight:500;">● Responding</span>
+      <span class="sep">│</span>
+      <span style="color:#7ee8fa;">Zen-Architect → main</span>
+      <span class="sep">│</span>
+      <span>↓ 405k · ↑ 6.2k · ⏱ 05:05</span>
+      <span class="sep">│</span>
+      <span class="dim">claude-opus-4-6</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ CHANGES ═══════════════════════════ -->
+<div class="view" id="v-changes">
+
+  <div class="cs">
+    <div class="cs-title" style="font-size:20px; margin-top:16px;">Streaming UI Redesign — 5 Changes</div>
+    <div class="cs-desc">Side-by-side diffs for each proposed change.</div>
+  </div>
+
+  <!-- 1. Compact lines -->
+  <div class="cs"><div class="cs-title">1. Compact Single-Line Tool Operations</div>
+  <div class="cs-desc">Merge tool header + result onto one line. Group consecutive reads. Strip repeated path prefix.</div></div>
+  <div class="diff-panel">
+    <div class="diff-side"><div class="diff-header bh">Before</div><div class="diff-body">
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: amplifier_.../formatting.py</span></div>
+      <div class="line" style="color:#555; padding-left:16px;">(512 lines)</div>
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Read: amplifier_.../rich_output.py</span></div>
+      <div class="line" style="color:#555; padding-left:16px;">(406 lines)</div>
+      <div class="line dim">│ ↓ 152,874 (66%) · ↑ 1,580 · Σ 154k · ⏱ 03:26</div>
+    </div></div>
+    <div class="diff-side"><div class="diff-header ah">After</div><div class="diff-body">
+      <div class="read-group" style="padding-left:0;">
+        <div class="rg-line"><span>▸ Read: formatting.py</span><span class="rg-result">(512 lines)</span></div>
+        <div class="rg-line"><span>▸ Read: rich_output.py</span><span class="rg-result">(406 lines)</span></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- 2. Agent tree -->
+  <div class="cs"><div class="cs-title">2. Agent Tree View with Colored Borders</div>
+  <div class="cs-desc">Sub-agents get colored left-border blocks with a header badge and completion summary.</div></div>
+  <div class="diff-panel">
+    <div class="diff-side"><div class="diff-header bh">Before</div><div class="diff-body">
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Task: Survey the entire codebase... (explorer)</span></div>
+      <div class="line dim" style="padding-left:16px;">┌─ sub-session</div>
+      <div class="line dim">  ... (flat tool lines, same indent) ...</div>
+      <div class="line dim" style="padding-left:16px;">└─ [01:29]</div>
+    </div></div>
+    <div class="diff-side"><div class="diff-header ah">After</div><div class="diff-body">
+      <div style="border-left:2px solid #7ee8fa; padding-left:12px;">
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+          <span class="cyan">◆</span><span class="cyan bold">Explorer</span>
+          <span class="badge explorer">explorer</span><span class="dim">— Survey codebase</span>
+        </div>
+        <div style="font-size:12px; color:#7ee8fa;">  ▸ Read: __init__.py <span class="dim">(395 lines)</span></div>
+        <div style="font-size:12px; color:#7ee8fa;">  ▸ Read: formatting.py <span class="dim">(512 lines)</span></div>
+        <div style="font-size:11px; color:#555; margin-top:4px; padding-top:4px; border-top:1px dotted #222;">✓ Complete · 7/7 · ⏱ 01:29</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- 3. Inline todos -->
+  <div class="cs"><div class="cs-title">3. Todos Indented Under Parent Agent</div>
+  <div class="cs-desc">Todo items render inside their agent's border block. Box chrome removed. Progress bar is a minimal 3px track.</div></div>
+  <div class="diff-panel">
+    <div class="diff-side"><div class="diff-header bh">Before</div><div class="diff-body">
+      <div class="line dim">▸ Todo: create 7 items (done)</div>
+      <div class="todo-box" style="margin:6px 0;">
+        <div class="title">┌─ Todo ──────────────────────┐</div>
+        <div class="todo-item" style="font-size:11px;"><span class="todo-active bold">▶</span> <span class="yellow">Mapping files</span></div>
+        <div class="todo-item" style="font-size:11px;"><span class="todo-pending">○</span> <span class="dim">Read config</span></div>
+        <div class="todo-item" style="font-size:11px;"><span class="todo-pending">○</span> <span class="dim">Read source</span></div>
+        <div class="pb"><div class="bar-track" style="width:120px;"><div class="bar-fill" style="width:0%"></div></div><div class="bar-label">0/3</div></div>
+      </div>
+    </div></div>
+    <div class="diff-side"><div class="diff-header ah">After</div><div class="diff-body">
+      <div style="border-left:2px solid #7ee8fa; padding-left:12px;">
+        <div class="todo-inline" style="margin:0;">
+          <div class="item active"><span class="icon spinner"></span><span class="label" style="font-size:12px;">Mapping files</span></div>
+          <div class="item pending"><span class="icon" style="font-size:12px;">□</span><span class="label" style="font-size:12px;">Read config</span></div>
+          <div class="item pending"><span class="icon" style="font-size:12px;">□</span><span class="label" style="font-size:12px;">Read source</span></div>
+          <div class="mini-progress"><div class="mini-bar"><div class="mini-fill yellow" style="width:15%"></div></div><div class="mini-label">0/3</div></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- 4. Spinner -->
+  <div class="cs"><div class="cs-title">4. Activity Indicators During Pauses</div>
+  <div class="cs-desc">Animated braille spinner replaces static "Thinking...". Active todos get a spinner. Elapsed time ticks during long waits.</div></div>
+  <div class="diff-panel">
+    <div class="diff-side"><div class="diff-header bh">Before</div><div class="diff-body">
+      <div class="line thinking-line">Thinking...</div>
+      <div class="line dim" style="font-size:11px;">(3+ minutes of dead silence)</div>
+      <div class="line dim">│ ↓ 152,874 · ↑ 1,580 · ⏱ 03:26</div>
+    </div></div>
+    <div class="diff-side"><div class="diff-header ah">After</div><div class="diff-body">
+      <div class="thinking-compact">
+        <span class="spinner"></span><span>Thinking...</span>
+        <span class="dim" style="margin-left:auto; font-style:normal; font-size:11px;">⏱ <span class="pulse">03:26</span></span>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- 5. Footer -->
+  <div class="cs"><div class="cs-title">5. Persistent Footer Status Bar</div>
+  <div class="cs-desc">All mid-turn token stats move to a footer bar (rendered by prompt_toolkit). Only the final per-prompt summary remains inline.</div></div>
+  <div class="diff-panel">
+    <div class="diff-side"><div class="diff-header bh">Before</div><div class="diff-body">
+      <div class="line dim">│ ↓ 87,457 (49%) · ↑ 625 · Σ 88,082 · ⏱ 00:28</div>
+      <div class="line dim">│ ↓ 21,922 (83%) · ↑ 326 · Σ 22,248 · ⏱ 00:06</div>
+      <div class="line dim">│ ↓ 41,651 (90%) · ↑ 491 · Σ 42,142 · ⏱ 00:11</div>
+      <div class="line dim">│ ↓ 44,435 (88%) · ↑ 573 · Σ 45,008 · ⏱ 00:11</div>
+      <div class="line dim" style="font-size:11px;">(repeated after every API round-trip)</div>
+    </div></div>
+    <div class="diff-side"><div class="diff-header ah">After</div><div class="diff-body" style="padding-bottom:0;">
+      <div class="line dim" style="font-size:11px; margin-bottom:8px;">(token stats live in footer only — scroll is clean)</div>
+      <div style="border-top:1px solid #2a2a4a; margin:0 -14px; padding:0 14px;">
+        <div style="padding:6px 0; display:flex; align-items:center; gap:6px;">
+          <span class="green bold">></span>
+          <span style="display:inline-block; width:8px; height:14px; background:#50fa7b;" class="pulse"></span>
+        </div>
+        <div style="padding:3px 0 8px; display:flex; gap:14px; font-size:11px; color:#555; background:#16162a; margin:0 -14px; padding:4px 14px;">
+          <span class="yellow bold" style="font-size:11px;">● Thinking</span>
+          <span style="color:#2a2a4a;">│</span>
+          <span class="cyan" style="font-size:11px;">Explorer → main</span>
+          <span style="color:#2a2a4a;">│</span>
+          <span style="font-size:11px;">↓ 87k · ↑ 625 · ⏱ 00:28</span>
+          <span style="color:#2a2a4a;">│</span>
+          <span class="dim" style="font-size:11px;">opus-4-6</span>
+        </div>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ FOOTER STATES ═══════════════════════════ -->
+<div class="view" id="v-footer">
+  <div class="cs">
+    <div class="cs-title" style="font-size:20px; margin-top:16px;">Footer Status Bar — All States</div>
+    <div class="cs-desc">Pinned to bottom two terminal lines. Rendered by prompt_toolkit bottom_toolbar reading from StatusBarProvider.</div>
+  </div>
+
+  <!-- Idle -->
+  <div class="cs"><div class="cs-desc" style="font-size:12px; color:#7ee8fa; margin-bottom:4px;">IDLE — waiting for user input</div>
+  <div style="background:#0d0d1a; border:1px solid #2a2a4a; border-radius:8px; overflow:hidden; max-width:700px;">
+    <div style="padding:8px 16px; display:flex; align-items:center; gap:6px;"><span class="green bold">></span><span class="footer-cursor"></span></div>
+    <div style="padding:4px 16px 6px; display:flex; gap:14px; font-size:11px; color:#555; background:#16162a;">
+      <span style="color:#50fa7b;">● Ready</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">amplifier-module-hooks-streaming-ui</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">feature/session-indicator</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">opus-4-6</span>
+    </div>
+  </div></div>
+
+  <!-- Thinking -->
+  <div class="cs"><div class="cs-desc" style="font-size:12px; color:#7ee8fa; margin-bottom:4px;">THINKING — waiting for model response</div>
+  <div style="background:#0d0d1a; border:1px solid #2a2a4a; border-radius:8px; overflow:hidden; max-width:700px;">
+    <div style="padding:8px 16px; display:flex; align-items:center; gap:6px;"><span class="green bold">></span><span class="dim italic" style="font-size:12px;">what does this module do?</span></div>
+    <div style="padding:4px 16px 6px; display:flex; gap:14px; font-size:11px; color:#555; background:#16162a;">
+      <span class="yellow bold" style="font-size:11px;"><span class="spinner"></span> Thinking</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">↓ 87k (49% cached) · ↑ 625</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">⏱ <span class="pulse">00:28</span></span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">opus-4-6</span>
+    </div>
+  </div></div>
+
+  <!-- Tool running -->
+  <div class="cs"><div class="cs-desc" style="font-size:12px; color:#7ee8fa; margin-bottom:4px;">TOOL_RUNNING — executing a tool</div>
+  <div style="background:#0d0d1a; border:1px solid #2a2a4a; border-radius:8px; overflow:hidden; max-width:700px;">
+    <div style="padding:8px 16px; display:flex; align-items:center; gap:6px;"><span class="green bold">></span><span class="dim italic" style="font-size:12px;">what does this module do?</span></div>
+    <div style="padding:4px 16px 6px; display:flex; gap:14px; font-size:11px; color:#555; background:#16162a;">
+      <span class="cyan bold" style="font-size:11px;"><span class="spinner"></span> Read: formatting.py</span><span style="color:#2a2a4a;">│</span>
+      <span class="cyan" style="font-size:11px;">Explorer</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">↓ 152k · ↑ 1.6k</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">⏱ 03:26</span>
+    </div>
+  </div></div>
+
+  <!-- Nested agent -->
+  <div class="cs"><div class="cs-desc" style="font-size:12px; color:#7ee8fa; margin-bottom:4px;">NESTED AGENT — breadcrumb shows full context chain</div>
+  <div style="background:#0d0d1a; border:1px solid #2a2a4a; border-radius:8px; overflow:hidden; max-width:700px;">
+    <div style="padding:8px 16px; display:flex; align-items:center; gap:6px;"><span class="green bold">></span><span class="dim italic" style="font-size:12px;">what does this module do?</span></div>
+    <div style="padding:4px 16px 6px; display:flex; gap:14px; font-size:11px; color:#555; background:#16162a;">
+      <span class="yellow bold" style="font-size:11px;"><span class="spinner"></span> Thinking</span><span style="color:#2a2a4a;">│</span>
+      <span class="cyan" style="font-size:11px;">main → Explorer → Deep-Scan</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">↓ 1.2M · ↑ 2.4k</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">⏱ 01:14</span>
+    </div>
+  </div></div>
+
+  <!-- Error -->
+  <div class="cs"><div class="cs-desc" style="font-size:12px; color:#7ee8fa; margin-bottom:4px;">ERROR — MCP or tool failure surfaced</div>
+  <div style="background:#0d0d1a; border:1px solid #2a2a4a; border-radius:8px; overflow:hidden; max-width:700px;">
+    <div style="padding:8px 16px; display:flex; align-items:center; gap:6px;"><span class="green bold">></span><span class="dim italic" style="font-size:12px;">what does this module do?</span></div>
+    <div style="padding:4px 16px 6px; display:flex; gap:14px; font-size:11px; color:#555; background:#16162a;">
+      <span class="red bold" style="font-size:11px;">✗ LSP: pyright not found</span><span style="color:#2a2a4a;">│</span>
+      <span class="cyan" style="font-size:11px;">Zen-Architect</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">↓ 364k · ↑ 1.3k</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">⏱ 00:35</span>
+    </div>
+  </div></div>
+
+  <!-- Complete -->
+  <div class="cs" style="margin-bottom:80px;"><div class="cs-desc" style="font-size:12px; color:#7ee8fa; margin-bottom:4px;">COMPLETE — response finished, ready for next prompt</div>
+  <div style="background:#0d0d1a; border:1px solid #2a2a4a; border-radius:8px; overflow:hidden; max-width:700px;">
+    <div style="padding:8px 16px; display:flex; align-items:center; gap:6px;"><span class="green bold">></span><span class="footer-cursor"></span></div>
+    <div style="padding:4px 16px 6px; display:flex; gap:14px; font-size:11px; color:#555; background:#16162a;">
+      <span style="color:#50fa7b; font-size:11px;">✓ Done</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">↓ 405k (45% cached) · ↑ 6.2k · ~$1.23</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">⏱ 05:05</span><span style="color:#2a2a4a;">│</span>
+      <span class="dim">opus-4-6</span>
+    </div>
+  </div></div>
+</div>
+
+<script>
+function go(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('v-' + name).classList.add('active');
+  const tabs = document.querySelectorAll('.nav-tab');
+  ['before','after','changes','footer'].forEach((n, i) => {
+    if (n === name) tabs[i].classList.add('active');
+  });
+  document.getElementById('footer-demo').style.display = (name === 'after') ? 'block' : 'none';
+}
+document.getElementById('footer-demo').style.display = 'none';
+</script>
+</body>
+</html>

@@ -88,6 +88,17 @@ class SessionState:
     model: Optional[str] = None
     provider: Optional[str] = None
 
+    # Agent identity (for sub-sessions)
+    agent_name: Optional[str] = None
+    agent_type: Optional[str] = None
+    agent_desc: Optional[str] = None
+
+    # Buffered tool header for compact single-line output
+    pending_tool_header: Optional[str] = None
+
+    # Thinking text accumulator (for accordion preview)
+    thinking_text: str = ""
+
     def elapsed_seconds(self) -> float:
         """Seconds since session started."""
         return (datetime.now() - self.start_time).total_seconds()
@@ -175,3 +186,14 @@ class StateManager:
                 state.thinking_start = None
             elif phase == Phase.THINKING:
                 state.thinking_start = datetime.now()
+
+    def get_breadcrumb(self, session_id: str) -> str:
+        """Build an agent breadcrumb path like 'main → Explorer → Deep-Scan'."""
+        parts: list[str] = []
+        current = self.sessions.get(session_id)
+        while current:
+            name = current.agent_name or ("main" if current.depth == 0 else "sub-session")
+            parts.append(name)
+            current = self.sessions.get(current.parent_id) if current.parent_id else None
+        parts.reverse()
+        return " → ".join(parts)
