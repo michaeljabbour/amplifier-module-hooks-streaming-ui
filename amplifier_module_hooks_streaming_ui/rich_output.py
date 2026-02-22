@@ -20,6 +20,7 @@ from rich.theme import Theme
 
 from .cost import CostEstimate
 from .formatting import (
+    CodeChange,
     extract_output,
     format_result_summary,
     format_tool_header,
@@ -377,6 +378,86 @@ def print_inline_status(status_text: str) -> None:
     """Print a dim inline status line (fallback for when no prompt_toolkit toolbar exists)."""
     console = get_console()
     console.print(f"[dim]{status_text}[/]")
+
+
+# ============================================================================
+# Code Change Rendering (Claude-style inline diffs)
+# ============================================================================
+
+
+def print_code_change(change: CodeChange, depth: int = 0) -> None:
+    """Print a Claude-style inline diff for edit_file operations.
+
+    Renders:
+        \u25b8 Update(file.py)
+          \u23bf  Added 1 line, removed 1 line
+              1  [project]
+              2  name = "foo"
+              3 -description = "old"
+              3 +description = "new"
+              4  license = "MIT"
+    """
+    console = get_console()
+    prefix = _depth_prefix(depth)
+
+    # Header: \u25b8 Update(filename)
+    console.print(
+        f"{prefix}[tool.bullet]{BULLET_TRIANGLE}[/] [tool.header]Update({change.display_path})[/]"
+    )
+
+    # Summary: \u23bf  Added N lines, removed M lines
+    console.print(
+        f"{prefix}  [dim]\u23bf  {change.summary}[/]"
+    )
+
+    if not change.diff_lines:
+        return
+
+    # Calculate line number width for alignment
+    max_num = max(
+        (dl.number for dl in change.diff_lines if dl.number > 0), default=1
+    )
+    num_width = len(str(max_num))
+
+    for dl in change.diff_lines:
+        if dl.marker == "~":
+            # Skip/ellipsis line
+            pad = " " * (num_width + 1)
+            console.print(f"{prefix}  [dim]  {pad}{dl.text}[/]")
+        elif dl.marker == "-":
+            num_str = str(dl.number).rjust(num_width)
+            console.print(
+                f"{prefix}  [red]  {num_str} -{dl.text}[/]"
+            )
+        elif dl.marker == "+":
+            num_str = str(dl.number).rjust(num_width)
+            console.print(
+                f"{prefix}  [green]  {num_str} +{dl.text}[/]"
+            )
+        else:
+            # Context line
+            num_str = str(dl.number).rjust(num_width)
+            console.print(
+                f"{prefix}  [dim]  {num_str}  {dl.text}[/]"
+            )
+
+
+def print_write_summary(file_path: str, line_count: int, depth: int = 0) -> None:
+    """Print a summary for write_file operations.
+
+    Renders:
+        \u25b8 Write(file.py)
+          \u23bf  Created (42 lines)
+    """
+    console = get_console()
+    prefix = _depth_prefix(depth)
+
+    console.print(
+        f"{prefix}[tool.bullet]{BULLET_TRIANGLE}[/] [tool.header]Write({file_path})[/]"
+    )
+    console.print(
+        f"{prefix}  [dim]\u23bf  Created ({line_count} lines)[/]"
+    )
 
 
 # ============================================================================

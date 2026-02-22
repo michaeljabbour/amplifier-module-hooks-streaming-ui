@@ -21,8 +21,10 @@ from typing import Any
 from amplifier_core.models import HookResult
 
 from .cost import estimate_cost
-from .formatting import format_tool_header, is_error_result
+from .formatting import format_code_change, format_tool_header, is_error_result
+from .insights import get_insight_instructions
 from .rich_output import (
+    print_code_change,
     print_inline_status,
     print_session_footer,
     print_session_header,
@@ -33,6 +35,7 @@ from .rich_output import (
     print_tool_call,
     print_tool_merged,
     print_tool_result,
+    print_write_summary,
 )
 from .spinner import SpinnerManager
 from .state import Phase, StateManager, ToolCall
@@ -52,6 +55,8 @@ async def mount(coordinator: Any, config: dict[str, Any]) -> None:
         show_token_usage=ui_config.get("show_token_usage", True),
         show_status_bar=ui_config.get("show_status_bar", True),
         thinking_preview_lines=ui_config.get("thinking_preview_lines", 0),
+        insight_mode=ui_config.get("insight_mode", "off"),
+        show_diff=ui_config.get("show_diff", True),
     )
 
     # Register hooks
@@ -81,6 +86,8 @@ class StreamingUIHooks:
         show_token_usage: bool = True,
         show_status_bar: bool = True,
         thinking_preview_lines: int = 0,
+        insight_mode: str = "off",
+        show_diff: bool = True,
     ):
         self.show_thinking = show_thinking
         self.show_tool_output = show_tool_output
@@ -88,6 +95,8 @@ class StreamingUIHooks:
         self.show_token_usage = show_token_usage
         self.show_status_bar = show_status_bar
         self.thinking_preview_lines = thinking_preview_lines
+        self.insight_mode = insight_mode
+        self.show_diff = show_diff
 
         # State management
         self.state_manager = StateManager()
@@ -135,6 +144,18 @@ class StreamingUIHooks:
                 print_session_header(state)
 
         self._update_status(session_id)
+
+        # Inject insight instructions if configured (root sessions only)
+        if state.depth == 0 and self.insight_mode != "off":
+            instructions = get_insight_instructions(self.insight_mode)
+            if instructions:
+                return HookResult(
+                    action="inject_context",
+                    context_injection=instructions,
+                    context_injection_role="system",
+                    ephemeral=False,
+                )
+
         return HookResult(action="continue")
 
     async def handle_session_end(self, _event: str, data: dict[str, Any]) -> HookResult:
@@ -366,14 +387,55 @@ class StreamingUIHooks:
         if self._spinner:
             self._spinner.stop()
 
+        # Save tool input before clearing (needed for diff display)
+        _tool_input_for_display = (
+            state.current_tool.arguments if state and state.current_tool else None
+        ) or data.get("tool_input", {})
+
         if state:
             state.phase = Phase.STREAMING
             state.current_tool = None
 
         if self.show_tool_output:
             depth = state.depth if state else 0
+            tool_input = _tool_input_for_display
+
             with self._output_lock:
-                if state and state.pending_tool_header:
+                # Claude-style inline diff for edit_file
+                if (
+                    self.show_diff
+                    and tool_name.lower() == "edit_file"
+                    and success
+                    and isinstance(tool_input, dict)
+                    and tool_input.get("old_string")
+                ):
+                    change = format_code_change(
+                        file_path=tool_input.get("file_path", "?"),
+                        old_string=tool_input.get("old_string", ""),
+                        new_string=tool_input.get("new_string", ""),
+                        cwd=self._cwd,
+                    )
+                    print_code_change(change, depth)
+                    if state:
+                        state.pending_tool_header = None
+
+                # Write summary for write_file
+                elif (
+                    self.show_diff
+                    and tool_name.lower() == "write_file"
+                    and success
+                    and isinstance(tool_input, dict)
+                ):
+                    file_path = tool_input.get("file_path", "?")
+                    content_text = tool_input.get("content", "")
+                    line_count = content_text.count("\n") + 1 if content_text else 0
+                    from .formatting import make_relative
+                    rel_path = make_relative(file_path, self._cwd)
+                    print_write_summary(rel_path, line_count, depth)
+                    if state:
+                        state.pending_tool_header = None
+
+                elif state and state.pending_tool_header:
                     # Merged single-line output for fast tools
                     print_tool_merged(
                         state.pending_tool_header,

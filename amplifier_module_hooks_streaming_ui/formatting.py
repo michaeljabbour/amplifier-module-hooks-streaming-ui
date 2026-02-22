@@ -370,6 +370,108 @@ def extract_output(result: Any) -> str:
     return str(result)
 
 
+class DiffLine:
+    """A single line in a code change diff."""
+
+    __slots__ = ("number", "marker", "text")
+
+    def __init__(self, number: int, marker: str, text: str):
+        self.number = number  # 0 = skip marker
+        self.marker = marker  # " ", "-", "+", "~"
+        self.text = text
+
+
+class CodeChange:
+    """Result of format_code_change -- structured diff data for rendering."""
+
+    __slots__ = ("display_path", "summary", "additions", "deletions", "diff_lines")
+
+    def __init__(
+        self,
+        display_path: str,
+        summary: str,
+        additions: int,
+        deletions: int,
+        diff_lines: list["DiffLine"],
+    ):
+        self.display_path = display_path
+        self.summary = summary
+        self.additions = additions
+        self.deletions = deletions
+        self.diff_lines = diff_lines
+
+
+def format_code_change(
+    file_path: str,
+    old_string: str,
+    new_string: str,
+    context_lines: int = 3,
+    cwd: "Path | None" = None,
+) -> CodeChange:
+    """Generate a Claude-style inline diff for an edit_file operation.
+
+    Returns a CodeChange with:
+    - display_path: shortened file path
+    - summary: "Added N lines, removed M lines"
+    - diff_lines: list of DiffLine(number, marker, text) for rendering
+
+    Markers: " " context, "-" removed, "+" added, "~" skip.
+    """
+    rel_path = make_relative(file_path, cwd)
+
+    old_lines = old_string.splitlines() if old_string else []
+    new_lines = new_string.splitlines() if new_string else []
+
+    additions, deletions = count_diff_changes(old_string, new_string)
+
+    # Build summary
+    parts: list[str] = []
+    if additions:
+        parts.append(f"Added {additions} line{'s' if additions != 1 else ''}")
+    if deletions:
+        parts.append(f"removed {deletions} line{'s' if deletions != 1 else ''}")
+    summary = ", ".join(parts) if parts else "No changes"
+
+    # Generate diff lines with context using SequenceMatcher
+    sm = difflib.SequenceMatcher(None, old_lines, new_lines)
+    diff_lines: list[DiffLine] = []
+
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            lines = old_lines[i1:i2]
+            if len(lines) <= context_lines * 2:
+                for idx, line in enumerate(lines):
+                    diff_lines.append(DiffLine(i1 + idx + 1, " ", line))
+            else:
+                for idx in range(context_lines):
+                    diff_lines.append(DiffLine(i1 + idx + 1, " ", lines[idx]))
+                skipped = len(lines) - context_lines * 2
+                if skipped > 0:
+                    diff_lines.append(DiffLine(0, "~", f"... {skipped} unchanged lines ..."))
+                for idx in range(context_lines):
+                    real_idx = len(lines) - context_lines + idx
+                    diff_lines.append(DiffLine(i1 + real_idx + 1, " ", lines[real_idx]))
+        elif tag == "delete":
+            for idx, line in enumerate(old_lines[i1:i2]):
+                diff_lines.append(DiffLine(i1 + idx + 1, "-", line))
+        elif tag == "insert":
+            for idx, line in enumerate(new_lines[j1:j2]):
+                diff_lines.append(DiffLine(j1 + idx + 1, "+", line))
+        elif tag == "replace":
+            for idx, line in enumerate(old_lines[i1:i2]):
+                diff_lines.append(DiffLine(i1 + idx + 1, "-", line))
+            for idx, line in enumerate(new_lines[j1:j2]):
+                diff_lines.append(DiffLine(j1 + idx + 1, "+", line))
+
+    return CodeChange(
+        display_path=rel_path,
+        summary=summary,
+        additions=additions,
+        deletions=deletions,
+        diff_lines=diff_lines,
+    )
+
+
 def is_error_result(result: Any) -> bool:
     """Determine if a tool result represents an error."""
     if result is None:

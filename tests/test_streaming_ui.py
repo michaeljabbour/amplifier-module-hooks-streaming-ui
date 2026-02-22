@@ -727,3 +727,389 @@ class TestStatusBar:
         assert "Thinking" in toolbar
         assert "50.0k" in toolbar
         assert "00:15" in toolbar
+
+
+# ---------------------------------------------------------------------------
+# Insight Injection Tests
+# ---------------------------------------------------------------------------
+
+
+class TestInsightInjection:
+    """Test insight mode context injection on session:start."""
+
+    @pytest.mark.asyncio
+    async def test_insight_off_returns_continue(self):
+        """With insight_mode='off', session:start returns continue (no injection)."""
+        hooks = _make_hooks(insight_mode="off")
+        hooks.state_manager.get_or_create("test-session", parent_id=None)
+
+        result = await hooks.handle_session_start(
+            "session:start", {"session_id": "test-session"}
+        )
+
+        assert isinstance(result, HookResult)
+        assert result.action == "continue"
+
+    @pytest.mark.asyncio
+    async def test_insight_explanatory_injects_context(self):
+        """With insight_mode='explanatory', session:start injects system context."""
+        hooks = _make_hooks(insight_mode="explanatory")
+        hooks.state_manager.get_or_create("test-session", parent_id=None)
+
+        result = await hooks.handle_session_start(
+            "session:start", {"session_id": "test-session"}
+        )
+
+        assert isinstance(result, HookResult)
+        assert result.action == "inject_context"
+        assert result.context_injection is not None
+        assert "\u2605 Insight" in result.context_injection
+        assert result.context_injection_role == "system"
+
+    @pytest.mark.asyncio
+    async def test_insight_learning_injects_context(self):
+        """With insight_mode='learning', instructions include learning content."""
+        hooks = _make_hooks(insight_mode="learning")
+        hooks.state_manager.get_or_create("test-session", parent_id=None)
+
+        result = await hooks.handle_session_start(
+            "session:start", {"session_id": "test-session"}
+        )
+
+        assert isinstance(result, HookResult)
+        assert result.action == "inject_context"
+        assert "5-10 lines" in result.context_injection
+
+    @pytest.mark.asyncio
+    async def test_insight_combined_injects_both(self):
+        """Combined mode includes both learning and insight block content."""
+        hooks = _make_hooks(insight_mode="combined")
+        hooks.state_manager.get_or_create("test-session", parent_id=None)
+
+        result = await hooks.handle_session_start(
+            "session:start", {"session_id": "test-session"}
+        )
+
+        assert isinstance(result, HookResult)
+        assert result.action == "inject_context"
+        assert "\u2605 Insight" in result.context_injection
+        assert "learning" in result.context_injection.lower()
+
+    @pytest.mark.asyncio
+    async def test_insight_not_injected_for_child_sessions(self):
+        """Insights are only injected for root sessions (depth=0)."""
+        hooks = _make_hooks(insight_mode="explanatory")
+        hooks.state_manager.get_or_create("parent", parent_id=None)
+        hooks.state_manager.get_or_create("child", parent_id="parent")
+
+        result = await hooks.handle_session_start(
+            "session:start", {"session_id": "child", "parent_id": "parent"}
+        )
+
+        assert isinstance(result, HookResult)
+        assert result.action == "continue"
+
+
+# ---------------------------------------------------------------------------
+# Code Change Display Tests
+# ---------------------------------------------------------------------------
+
+
+class TestCodeChangeDisplay:
+    """Test Claude-style inline diff rendering for edit_file."""
+
+    @pytest.mark.asyncio
+    async def test_edit_file_shows_diff(self):
+        """edit_file with show_diff=True renders inline diff."""
+        _console, buf = _capture_console()
+        hooks = _make_hooks_with_session(show_diff=True)
+
+        # Simulate tool:pre (buffers header for fast tool)
+        await hooks.handle_tool_pre(
+            "tool:pre",
+            {
+                "session_id": "test-session",
+                "tool_name": "edit_file",
+                "tool_input": {
+                    "file_path": "src/auth.py",
+                    "old_string": 'description = "old text"',
+                    "new_string": 'description = "new text"',
+                },
+            },
+        )
+
+        # Simulate tool:post (success)
+        await hooks.handle_tool_post(
+            "tool:post",
+            {
+                "session_id": "test-session",
+                "tool_name": "edit_file",
+                "tool_input": {
+                    "file_path": "src/auth.py",
+                    "old_string": 'description = "old text"',
+                    "new_string": 'description = "new text"',
+                },
+                "tool_response": {"success": True},
+            },
+        )
+
+        output = _get_output(buf)
+        assert "Update(src/auth.py)" in output
+        assert "Added 1 line" in output
+        assert "removed 1 line" in output
+        assert "old text" in output
+        assert "new text" in output
+
+    @pytest.mark.asyncio
+    async def test_edit_file_diff_disabled(self):
+        """edit_file with show_diff=False uses normal merged output."""
+        _console, buf = _capture_console()
+        hooks = _make_hooks_with_session(show_diff=False)
+
+        await hooks.handle_tool_pre(
+            "tool:pre",
+            {
+                "session_id": "test-session",
+                "tool_name": "edit_file",
+                "tool_input": {
+                    "file_path": "src/auth.py",
+                    "old_string": "old",
+                    "new_string": "new",
+                },
+            },
+        )
+
+        await hooks.handle_tool_post(
+            "tool:post",
+            {
+                "session_id": "test-session",
+                "tool_name": "edit_file",
+                "tool_input": {
+                    "file_path": "src/auth.py",
+                    "old_string": "old",
+                    "new_string": "new",
+                },
+                "tool_response": {"success": True},
+            },
+        )
+
+        output = _get_output(buf)
+        # Should NOT show Claude-style Update() header
+        assert "Update(" not in output
+        # Should show normal merged header instead
+        assert "Edit:" in output
+
+    @pytest.mark.asyncio
+    async def test_edit_file_error_falls_through(self):
+        """edit_file errors bypass diff display and show normal error output."""
+        _console, buf = _capture_console()
+        hooks = _make_hooks_with_session(show_diff=True)
+
+        await hooks.handle_tool_pre(
+            "tool:pre",
+            {
+                "session_id": "test-session",
+                "tool_name": "edit_file",
+                "tool_input": {
+                    "file_path": "src/auth.py",
+                    "old_string": "old",
+                    "new_string": "new",
+                },
+            },
+        )
+
+        await hooks.handle_tool_post(
+            "tool:post",
+            {
+                "session_id": "test-session",
+                "tool_name": "edit_file",
+                "tool_input": {
+                    "file_path": "src/auth.py",
+                    "old_string": "old",
+                    "new_string": "new",
+                },
+                "tool_response": {"error": "old_string not found"},
+            },
+        )
+
+        output = _get_output(buf)
+        # Error: should fall through to normal merged output, not diff
+        assert "(error)" in output
+
+    @pytest.mark.asyncio
+    async def test_write_file_shows_summary(self):
+        """write_file with show_diff=True renders write summary."""
+        _console, buf = _capture_console()
+        hooks = _make_hooks_with_session(show_diff=True)
+
+        await hooks.handle_tool_pre(
+            "tool:pre",
+            {
+                "session_id": "test-session",
+                "tool_name": "write_file",
+                "tool_input": {
+                    "file_path": "src/new_file.py",
+                    "content": "line1\nline2\nline3\n",
+                },
+            },
+        )
+
+        await hooks.handle_tool_post(
+            "tool:post",
+            {
+                "session_id": "test-session",
+                "tool_name": "write_file",
+                "tool_input": {
+                    "file_path": "src/new_file.py",
+                    "content": "line1\nline2\nline3\n",
+                },
+                "tool_response": {"success": True},
+            },
+        )
+
+        output = _get_output(buf)
+        assert "Write(src/new_file.py)" in output
+        assert "Created" in output
+        assert "4 lines" in output
+
+    @pytest.mark.asyncio
+    async def test_multiline_edit_shows_context(self):
+        """Multi-line edit shows context lines around changes."""
+        _console, buf = _capture_console()
+        hooks = _make_hooks_with_session(show_diff=True)
+
+        old = "line1\nline2\nold_line\nline4\nline5"
+        new = "line1\nline2\nnew_line\nline4\nline5"
+
+        await hooks.handle_tool_pre(
+            "tool:pre",
+            {
+                "session_id": "test-session",
+                "tool_name": "edit_file",
+                "tool_input": {"file_path": "f.py", "old_string": old, "new_string": new},
+            },
+        )
+
+        await hooks.handle_tool_post(
+            "tool:post",
+            {
+                "session_id": "test-session",
+                "tool_name": "edit_file",
+                "tool_input": {"file_path": "f.py", "old_string": old, "new_string": new},
+                "tool_response": {"success": True},
+            },
+        )
+
+        output = _get_output(buf)
+        assert "Update(f.py)" in output
+        # Context lines present
+        assert "line1" in output
+        assert "line2" in output
+        # Changed lines
+        assert "old_line" in output
+        assert "new_line" in output
+
+
+# ---------------------------------------------------------------------------
+# Formatting: format_code_change Tests
+# ---------------------------------------------------------------------------
+
+
+class TestFormatCodeChange:
+    """Test the pure formatting logic for code change diffs."""
+
+    def test_single_line_replacement(self):
+        from amplifier_module_hooks_streaming_ui.formatting import format_code_change
+
+        change = format_code_change("test.py", "old", "new")
+        assert change.display_path == "test.py"
+        assert change.additions == 1
+        assert change.deletions == 1
+        assert "Added 1 line" in change.summary
+        assert "removed 1 line" in change.summary
+        assert len(change.diff_lines) == 2
+        assert change.diff_lines[0].marker == "-"
+        assert change.diff_lines[1].marker == "+"
+
+    def test_pure_addition(self):
+        from amplifier_module_hooks_streaming_ui.formatting import format_code_change
+
+        change = format_code_change("test.py", "a\nb", "a\nb\nc")
+        assert change.additions == 1
+        assert change.deletions == 0
+        assert "Added 1 line" in change.summary
+        assert "removed" not in change.summary
+
+    def test_pure_deletion(self):
+        from amplifier_module_hooks_streaming_ui.formatting import format_code_change
+
+        change = format_code_change("test.py", "a\nb\nc", "a\nb")
+        assert change.additions == 0
+        assert change.deletions == 1
+        assert "removed 1 line" in change.summary
+
+    def test_context_lines_included(self):
+        from amplifier_module_hooks_streaming_ui.formatting import format_code_change
+
+        old = "ctx1\nctx2\nctx3\nold\nctx4\nctx5\nctx6"
+        new = "ctx1\nctx2\nctx3\nnew\nctx4\nctx5\nctx6"
+        change = format_code_change("test.py", old, new, context_lines=2)
+
+        # Should have context lines with " " marker
+        context = [dl for dl in change.diff_lines if dl.marker == " "]
+        assert len(context) >= 2
+        changed = [dl for dl in change.diff_lines if dl.marker in ("-", "+")]
+        assert len(changed) == 2
+
+    def test_empty_old_string(self):
+        from amplifier_module_hooks_streaming_ui.formatting import format_code_change
+
+        change = format_code_change("test.py", "", "new line")
+        assert change.additions == 1
+        assert change.deletions == 0
+
+    def test_path_made_relative(self):
+        from pathlib import Path
+        from amplifier_module_hooks_streaming_ui.formatting import format_code_change
+
+        cwd = Path("/home/user/project")
+        change = format_code_change("/home/user/project/src/auth.py", "a", "b", cwd=cwd)
+        assert change.display_path == "src/auth.py"
+
+
+# ---------------------------------------------------------------------------
+# Insights Module Tests
+# ---------------------------------------------------------------------------
+
+
+class TestInsightsModule:
+    """Test the insights module directly."""
+
+    def test_get_insight_explanatory(self):
+        from amplifier_module_hooks_streaming_ui.insights import get_insight_instructions
+        result = get_insight_instructions("explanatory")
+        assert result is not None
+        assert "\u2605 Insight" in result
+
+    def test_get_insight_learning(self):
+        from amplifier_module_hooks_streaming_ui.insights import get_insight_instructions
+        result = get_insight_instructions("learning")
+        assert result is not None
+        assert "5-10 lines" in result
+
+    def test_get_insight_combined(self):
+        from amplifier_module_hooks_streaming_ui.insights import get_insight_instructions
+        result = get_insight_instructions("combined")
+        assert result is not None
+        assert "\u2605 Insight" in result
+        assert "learning" in result.lower()
+
+    def test_get_insight_off_returns_none(self):
+        from amplifier_module_hooks_streaming_ui.insights import get_insight_instructions
+        result = get_insight_instructions("off")
+        assert result is None
+
+    def test_get_insight_unknown_returns_none(self):
+        from amplifier_module_hooks_streaming_ui.insights import get_insight_instructions
+        result = get_insight_instructions("banana")
+        assert result is None
