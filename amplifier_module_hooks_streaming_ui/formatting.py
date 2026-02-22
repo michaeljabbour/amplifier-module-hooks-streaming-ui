@@ -115,7 +115,12 @@ def format_tool_header(
         pattern = tool_input.get("pattern", "?")
         path = tool_input.get("path")
         if path and path != ".":
-            return f"Glob: {pattern} in {path}"
+            rel_path = make_relative(path, cwd)
+            # Also shorten home dir
+            import os
+            home = os.path.expanduser("~")
+            rel_path = rel_path.replace(home + "/", "~/").replace(home, "~")
+            return f"Glob: {pattern} in {rel_path}"
         return f"Glob: {pattern}"
 
     if key == "grep":
@@ -139,9 +144,16 @@ def format_tool_header(
         instruction = tool_input.get("instruction", "")
         short_agent = agent.split(":")[-1] if ":" in agent else agent
         if instruction:
-            instr_preview = instruction[:40] + (
-                "..." if len(instruction) > 40 else ""
-            )
+            # Relativize any absolute paths in the instruction
+            instr = instruction
+            if cwd:
+                cwd_str = str(cwd)
+                instr = instr.replace(cwd_str + "/", "./").replace(cwd_str, ".")
+            # Also shorten home directory
+            import os
+            home = os.path.expanduser("~")
+            instr = instr.replace(home + "/", "~/").replace(home, "~")
+            instr_preview = instr[:50] + ("..." if len(instr) > 50 else "")
             return f"Task: {instr_preview} ({short_agent})"
         return f"Task: {short_agent}"
 

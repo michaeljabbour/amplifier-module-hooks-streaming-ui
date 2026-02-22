@@ -25,8 +25,8 @@ from .formatting import is_error_result
 from .rich_output import (
     print_session_footer,
     print_session_header,
-    print_thinking_block,
     print_thinking_elapsed,
+    print_thinking_start,
     print_token_usage,
     print_tool_call,
     print_tool_result,
@@ -166,6 +166,10 @@ class StreamingUIHooks:
                     "session_id": session_id,
                     "start_time": datetime.now(),
                 }
+                # Print compact thinking indicator
+                depth = state.depth if state else 0
+                with self._output_lock:
+                    print_thinking_start(depth)
 
         return HookResult(action="continue")
 
@@ -192,34 +196,26 @@ class StreamingUIHooks:
             and block_index in self.thinking_blocks
         ):
             thinking_info = self.thinking_blocks[block_index]
-            thinking_text = (
-                block.get("thinking", "")
-                or block.get("text", "")
-                or _flatten_content(block)
-            )
 
-            if thinking_text and self.show_thinking:
-                with self._output_lock:
-                    print_thinking_block(thinking_text, depth)
-
-                    # Show elapsed thinking time
-                    if thinking_info.get("start_time"):
-                        elapsed = (
-                            datetime.now() - thinking_info["start_time"]
-                        ).total_seconds()
-                        if elapsed > 1:
-                            print_thinking_elapsed(elapsed, depth)
+            # Show elapsed thinking time (compact - no full text)
+            if self.show_thinking and thinking_info.get("start_time"):
+                elapsed = (
+                    datetime.now() - thinking_info["start_time"]
+                ).total_seconds()
+                if elapsed > 1:
+                    with self._output_lock:
+                        print_thinking_elapsed(elapsed, depth)
 
             del self.thinking_blocks[block_index]
 
             if state:
                 self.state_manager.transition(session_id, Phase.STREAMING)
 
-        # Handle token usage on last block
+        # Handle token usage on last block (root session only)
         if is_last_block and self.show_token_usage and usage:
             self._update_metrics(session_id, usage)
 
-            if state:
+            if state and state.depth == 0:
                 cost = None
                 if state.provider and state.model:
                     cost = estimate_cost(

@@ -32,7 +32,7 @@ from .formatting import (
     get_lang_from_path,
     is_error_result,
 )
-from .state import PHASE_DISPLAY, Phase, SessionState
+from .state import Phase, SessionState
 
 # ============================================================================
 # Theme
@@ -122,20 +122,16 @@ TASK_PENDING = "\u25a1"   # gray square
 def print_session_header(
     state: SessionState, cost: Optional[CostEstimate] = None
 ) -> None:
-    """Print session header: ## Session [00:05] | $0.02"""
+    """Print session header as a subtle rule line."""
     console = get_console()
-    elapsed = state.elapsed_formatted()
-    cost_str = cost.format() if cost else "$0.00"
 
     if state.depth > 0:
         indent = "  " * state.depth
         agent_name = _extract_agent_name(state.session_id)
         console.print(
-            f"{indent}{BOX_CORNER_TL}{BOX_HORIZONTAL} [session.sub]Sub-session: {agent_name}[/]"
+            f"\n{indent}[session.sub]{BOX_CORNER_TL}{BOX_HORIZONTAL} {agent_name}[/]"
         )
     else:
-        console.print()
-        console.print(f"[session.header]## Session [{elapsed}] | {cost_str}[/]")
         console.print()
 
 
@@ -227,19 +223,22 @@ def print_tool_result(
 
 
 def print_thinking_block(text: str, depth: int = 0) -> None:
-    """Print a thinking/reasoning block with dimmed styling."""
+    """Print a thinking/reasoning block - compact mode.
+
+    Shows only a brief indicator, not full reasoning text.
+    The full text is available in the session transcript.
+    """
+    # Intentionally does nothing in compact mode.
+    # Thinking start indicator is printed by print_thinking_start().
+    # Elapsed time is printed by print_thinking_elapsed().
+    pass
+
+
+def print_thinking_start(depth: int = 0) -> None:
+    """Print compact thinking indicator when reasoning begins."""
     console = get_console()
     indent = "  " * depth
-    width = 60 - (depth * 2)
-
-    rule = BOX_HORIZONTAL * width
-    console.print(f"{indent}[thinking.border]{rule}[/]")
-    console.print(f"{indent}[thinking.border]Thinking:[/]")
-
-    for line in text.split("\n"):
-        console.print(f"{indent}[thinking.text]{line}[/]")
-
-    console.print(f"{indent}[thinking.border]{rule}[/]")
+    console.print(f"{indent}[thinking.border]Thinking...[/]")
 
 
 def print_thinking_elapsed(seconds: float, depth: int = 0) -> None:
@@ -303,39 +302,7 @@ def print_token_usage(
     console.print(f"{indent}[token.label]{BOX_VERTICAL} {line}[/]")
 
 
-# ============================================================================
-# Status Bar (plain text -- used by Terminal scroll region)
-# ============================================================================
 
-
-def format_status_bar(
-    phase: Phase,
-    elapsed_seconds: float,
-    tokens: int = 0,
-) -> str:
-    """Format status bar content as plain text.
-
-    Returns a plain string (no Rich markup) because the status bar
-    is rendered by Terminal.update_status() using raw cursor positioning
-    that Rich Console can't handle.
-    """
-    phase_name = PHASE_DISPLAY.get(phase, "Working\u2026")
-
-    parts = ["ctrl+c to interrupt"]
-
-    if elapsed_seconds > 0:
-        if elapsed_seconds < 60:
-            parts.append(f"{int(elapsed_seconds)}s")
-        else:
-            minutes = int(elapsed_seconds // 60)
-            secs = int(elapsed_seconds % 60)
-            parts.append(f"{minutes}m {secs}s")
-
-    if tokens > 0:
-        parts.append(f"\u2193 {tokens:,} tokens")
-
-    context = " \u00b7 ".join(parts)
-    return f"\u23f3 {phase_name} ({context})"
 
 
 # ============================================================================
