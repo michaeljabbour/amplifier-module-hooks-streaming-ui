@@ -11,16 +11,13 @@ Design constraints:
 - Thread-safe: all output goes through a single Console with lock
 """
 
-import sys
 import threading
 from pathlib import Path
 from typing import Any, Optional
 
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.panel import Panel
 from rich.rule import Rule
-from rich.text import Text
 from rich.theme import Theme
 
 from .cost import CostEstimate
@@ -29,10 +26,9 @@ from .formatting import (
     format_diff_text,
     format_result_summary,
     format_tool_header,
-    get_lang_from_path,
     is_error_result,
 )
-from .state import Phase, SessionState
+from .state import SessionState
 
 # ============================================================================
 # Theme
@@ -109,9 +105,9 @@ CHECK = "\u2713"
 CROSS = "\u2717"
 
 # Task checklist symbols
-TASK_DONE = "\u2713"      # green check
-TASK_ACTIVE = "\u25cf"    # yellow/orange bullet
-TASK_PENDING = "\u25a1"   # gray square
+TASK_DONE = "\u2713"  # green check
+TASK_ACTIVE = "\u25cf"  # yellow/orange bullet
+TASK_PENDING = "\u25a1"  # gray square
 
 # Depth-based colors for agent tree
 DEPTH_COLORS = ["cyan", "magenta", "green", "yellow", "blue"]
@@ -151,7 +147,7 @@ def print_session_header(
         type_part = f" [dim]({state.agent_type})[/]" if state.agent_type else ""
         desc_part = f" [dim]\u2014 {state.agent_desc}[/]" if state.agent_desc else ""
         console.print(
-            f"\n{prefix}[{color} bold]{BULLET_TRIANGLE} {agent_name}[/]{type_part}{desc_part}"
+            f"{prefix}[{color} bold]{BULLET_TRIANGLE} {agent_name}[/]{type_part}{desc_part}"
         )
     else:
         console.print()
@@ -160,11 +156,31 @@ def print_session_header(
 def print_session_footer(
     state: SessionState, cost: Optional[CostEstimate] = None
 ) -> None:
-    """Print session footer -- compact summary line for nested sessions."""
+    """Print session footer -- compact summary for all sessions."""
+    console = get_console()
+
     if state.depth == 0:
+        # Root session: print a summary rule with key stats
+        parts: list[str] = []
+
+        if state.metrics.tool_calls > 0:
+            parts.append(f"{state.metrics.tool_calls} tool calls")
+
+        elapsed = state.elapsed_formatted()
+        if elapsed:
+            parts.append(f"\u23f1 {elapsed}")
+
+        cost_str = cost.format() if cost else ""
+        if cost_str:
+            parts.append(cost_str)
+
+        summary = " \u00b7 ".join(parts)
+        if summary:
+            console.print()
+            console.print(f"[dim]\u2500 {summary}[/]")
         return
 
-    console = get_console()
+    # Nested session: agent completion line with depth prefix
     prefix = _depth_prefix(state.depth)
     color = DEPTH_COLORS[(state.depth - 1) % len(DEPTH_COLORS)]
     elapsed = state.elapsed_formatted()
@@ -181,6 +197,7 @@ def print_session_footer(
         parts.append(f"[dim]{cost_str}[/]")
 
     console.print(f"{prefix}{'  '.join(parts)}")
+    console.print()  # blank line after agent completion
 
 
 # ============================================================================
@@ -257,7 +274,7 @@ def print_tool_merged(
     else:
         style = "tool.result.dim"
 
-    result_part = f" [{style}]{summary}[/]" if summary else ""
+    result_part = f" [dim]\u2192[/] [{style}]{summary}[/]" if summary else ""
     console.print(
         f"{prefix}[tool.bullet]{BULLET_TRIANGLE}[/] [tool.header]{header}[/]{result_part}"
     )
@@ -280,9 +297,7 @@ def print_tool_merged(
 # ============================================================================
 
 
-def print_thinking_block(
-    text: str, depth: int = 0, max_preview_lines: int = 3
-) -> None:
+def print_thinking_block(text: str, depth: int = 0, max_preview_lines: int = 3) -> None:
     """Print a thinking block summary with optional preview.
 
     In compact mode (max_preview_lines=0), shows nothing (spinner covers it).
@@ -303,9 +318,7 @@ def print_thinking_block(
 
     if len(lines) > max_preview_lines:
         remaining = len(lines) - max_preview_lines
-        console.print(
-            f"{prefix}  [thinking.elapsed]... +{remaining} lines[/]"
-        )
+        console.print(f"{prefix}  [thinking.elapsed]... +{remaining} lines[/]")
 
 
 def print_thinking_start(depth: int = 0) -> None:
@@ -374,6 +387,12 @@ def print_token_usage(
     console.print(f"{prefix}[token.label]{line}[/]")
 
 
+def print_inline_status(status_text: str) -> None:
+    """Print a dim inline status line (fallback for when no prompt_toolkit toolbar exists)."""
+    console = get_console()
+    console.print(f"[dim]{status_text}[/]")
+
+
 # ============================================================================
 # Enhanced Content Blocks (claudechic-inspired)
 # ============================================================================
@@ -391,11 +410,13 @@ def print_insight_block(text: str) -> None:
     """Print an insight block with star and colored rules."""
     console = get_console()
     console.print()
-    console.print(Rule(
-        f"[insight.star]\u2605[/] [insight.text]Insight[/]",
-        style="insight.rule",
-        align="left",
-    ))
+    console.print(
+        Rule(
+            "[insight.star]\u2605[/] [insight.text]Insight[/]",
+            style="insight.rule",
+            align="left",
+        )
+    )
     console.print(f"[insight.text]{text}[/]")
     console.print(Rule(style="insight.rule"))
     console.print()

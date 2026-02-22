@@ -8,7 +8,6 @@ Ported from claudechic/formatting.py, adapted for Amplifier tool names.
 
 import difflib
 import json
-import re
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +55,27 @@ def truncate_path(path: str, max_len: int = MAX_HEADER_WIDTH) -> str:
     if 0 < sep_idx < len(suffix) - 1:
         suffix = suffix[sep_idx:]
     return "..." + suffix
+
+
+def shorten_paths(text: str, cwd: Path | None = None) -> str:
+    """Shorten absolute paths in text: cwd → relative, home → ~.
+
+    Applied to bash commands, grep paths, delegate instructions, etc.
+    to keep tool headers compact and readable.
+    """
+    import os
+
+    if cwd:
+        cwd_str = str(cwd)
+        # Replace cwd prefix with nothing (makes paths relative)
+        text = text.replace(cwd_str + "/", "")
+        # Bare cwd reference becomes "."
+        text = text.replace(cwd_str, ".")
+    home = os.path.expanduser("~")
+    if home != "~":
+        text = text.replace(home + "/", "~/")
+        text = text.replace(home, "~")
+    return text
 
 
 # ============================================================================
@@ -108,6 +128,7 @@ def format_tool_header(
         description = tool_input.get("description", "")
         if description:
             return f"Bash: {description}"
+        cmd = shorten_paths(cmd, cwd)
         truncated = cmd[:MAX_CMD_LEN] + ("..." if len(cmd) > MAX_CMD_LEN else "")
         return f"Bash: {truncated}"
 
@@ -115,19 +136,16 @@ def format_tool_header(
         pattern = tool_input.get("pattern", "?")
         path = tool_input.get("path")
         if path and path != ".":
-            rel_path = make_relative(path, cwd)
-            # Also shorten home dir
-            import os
-            home = os.path.expanduser("~")
-            rel_path = rel_path.replace(home + "/", "~/").replace(home, "~")
-            return f"Glob: {pattern} in {rel_path}"
+            short = shorten_paths(make_relative(path, cwd), cwd)
+            return f"Glob: {pattern} in {short}"
         return f"Glob: {pattern}"
 
     if key == "grep":
         pattern = tool_input.get("pattern", "?")
         path = tool_input.get("path")
         if path and path != ".":
-            return f'Grep: "{pattern}" in {path}'
+            short = shorten_paths(make_relative(path, cwd), cwd)
+            return f'Grep: "{pattern}" in {short}'
         return f'Grep: "{pattern}"'
 
     if key == "web_search":
@@ -144,15 +162,7 @@ def format_tool_header(
         instruction = tool_input.get("instruction", "")
         short_agent = agent.split(":")[-1] if ":" in agent else agent
         if instruction:
-            # Relativize any absolute paths in the instruction
-            instr = instruction
-            if cwd:
-                cwd_str = str(cwd)
-                instr = instr.replace(cwd_str + "/", "./").replace(cwd_str, ".")
-            # Also shorten home directory
-            import os
-            home = os.path.expanduser("~")
-            instr = instr.replace(home + "/", "~/").replace(home, "~")
+            instr = shorten_paths(instruction, cwd)
             instr_preview = instr[:50] + ("..." if len(instr) > 50 else "")
             return f"Task: {instr_preview} ({short_agent})"
         return f"Task: {short_agent}"
@@ -210,9 +220,7 @@ def format_tool_header(
 # ============================================================================
 
 
-def format_result_summary(
-    name: str, result: Any, is_error: bool = False
-) -> str:
+def format_result_summary(name: str, result: Any, is_error: bool = False) -> str:
     """Extract a short parenthesized summary from a tool result.
 
     Returns strings like "(143 lines)", "(done)", "(error)", "(3 matches)".
@@ -227,31 +235,31 @@ def format_result_summary(
         if not content.strip():
             return "(empty)"
         lines = content.count("\n") + 1
-        return f"({lines} lines)"
+        return f"({lines}L)"
 
     if key in ("bash", "shell"):
         stripped = content.strip()
         if not stripped:
-            return "(no output)"
+            return "(\u2205)"
         lines = stripped.split("\n")
-        return f"({len(lines)} lines)"
+        return f"({len(lines)}L)"
 
     if key == "grep":
         stripped = content.strip()
         if not stripped or "no matches" in stripped.lower():
-            return "(no matches)"
+            return "(0)"
         lines = [line for line in stripped.split("\n") if line.strip()]
-        return f"({len(lines)} matches)"
+        return f"({len(lines)} hits)"
 
     if key == "glob":
         stripped = content.strip()
         if not stripped:
-            return "(no files)"
+            return "(0)"
         lines = [line for line in stripped.split("\n") if line.strip()]
-        return f"({len(lines)} files)"
+        return f"({len(lines)})"
 
     if key in ("write_file", "edit_file"):
-        return "(done)"
+        return "(\u2713)"
 
     if key == "delegate":
         if not content.strip():

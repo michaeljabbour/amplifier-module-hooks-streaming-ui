@@ -99,6 +99,9 @@ class SessionState:
     # Thinking text accumulator (for accordion preview)
     thinking_text: str = ""
 
+    # Pending agent info for delegate tool (transferred to child on task:spawned)
+    _pending_agent_info: Optional[dict[str, str]] = None
+
     def elapsed_seconds(self) -> float:
         """Seconds since session started."""
         return (datetime.now() - self.start_time).total_seconds()
@@ -128,9 +131,24 @@ class StateManager:
         model: Optional[str] = None,
         provider: Optional[str] = None,
     ) -> SessionState:
-        """Get existing session or create new one."""
+        """Get existing session or create new one.
+
+        Merges newly-available parent/depth/model/provider into an existing
+        state.  This handles the race where ``session:start`` fires before
+        ``task:spawned`` — the first call creates the state with depth 0,
+        and the second call patches in the correct parent and depth.
+        """
         if session_id in self.sessions:
-            return self.sessions[session_id]
+            existing = self.sessions[session_id]
+            # Patch depth/parent when we finally learn who the parent is
+            if parent_id and not existing.parent_id and parent_id in self.sessions:
+                existing.parent_id = parent_id
+                existing.depth = self.sessions[parent_id].depth + 1
+            if model and not existing.model:
+                existing.model = model
+            if provider and not existing.provider:
+                existing.provider = provider
+            return existing
 
         depth = 0
         if parent_id and parent_id in self.sessions:
@@ -192,8 +210,12 @@ class StateManager:
         parts: list[str] = []
         current = self.sessions.get(session_id)
         while current:
-            name = current.agent_name or ("main" if current.depth == 0 else "sub-session")
+            name = current.agent_name or (
+                "main" if current.depth == 0 else "sub-session"
+            )
             parts.append(name)
-            current = self.sessions.get(current.parent_id) if current.parent_id else None
+            current = (
+                self.sessions.get(current.parent_id) if current.parent_id else None
+            )
         parts.reverse()
         return " → ".join(parts)

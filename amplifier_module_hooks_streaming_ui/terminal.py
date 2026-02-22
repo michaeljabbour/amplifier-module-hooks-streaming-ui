@@ -4,8 +4,6 @@ Provides ANSI style helpers and simple write functions.
 Scroll region / status bar removed - conflicts with prompt_toolkit REPL.
 """
 
-import sys
-from typing import TextIO
 
 # Styles
 BOLD = "\033[1m"
@@ -32,6 +30,7 @@ def style(text: str, *styles: str) -> str:
 def strip_ansi(text: str) -> str:
     """Remove ANSI escape codes from text."""
     import re
+
     return re.sub(r"\033\[[0-9;]*m", "", text)
 
 

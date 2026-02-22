@@ -16,13 +16,14 @@ import logging
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from amplifier_core.models import HookResult
 
 from .cost import estimate_cost
 from .formatting import format_tool_header, is_error_result
 from .rich_output import (
+    print_inline_status,
     print_session_footer,
     print_session_header,
     print_thinking_block,
@@ -34,7 +35,7 @@ from .rich_output import (
     print_tool_result,
 )
 from .spinner import SpinnerManager
-from .state import PHASE_DISPLAY, Phase, StateManager, ToolCall
+from .state import Phase, StateManager, ToolCall
 from .status_bar import StatusBarProvider
 
 logger = logging.getLogger(__name__)
@@ -156,10 +157,16 @@ class StreamingUIHooks:
                     state.metrics.cache_create_tokens,
                 )
 
-            # Print footer for nested sessions
-            if state.depth > 0:
-                with self._output_lock:
-                    print_session_footer(state, cost)
+            # Print session footer (root gets summary line, nested gets completion line)
+            with self._output_lock:
+                print_session_footer(state, cost)
+
+            # Inline status fallback (when CLI hasn't integrated prompt_toolkit toolbar)
+            if self.status_bar and state.depth == 0:
+                toolbar_text = self.status_bar.format_toolbar()
+                if toolbar_text:
+                    with self._output_lock:
+                        print_inline_status(toolbar_text)
 
         self._update_status(session_id)
         return HookResult(action="continue")
@@ -237,12 +244,12 @@ class StreamingUIHooks:
                 summary = block.get("summary", [])
                 content = block.get("content", [])
                 parts = []
-                for item in (summary if isinstance(summary, list) else [summary]):
+                for item in summary if isinstance(summary, list) else [summary]:
                     if isinstance(item, dict):
                         parts.append(item.get("text", ""))
                     elif isinstance(item, str):
                         parts.append(item)
-                for item in (content if isinstance(content, list) else [content]):
+                for item in content if isinstance(content, list) else [content]:
                     if isinstance(item, dict):
                         parts.append(item.get("text", ""))
                     elif isinstance(item, str):
@@ -255,9 +262,7 @@ class StreamingUIHooks:
 
             # Show elapsed time + optional preview
             if self.show_thinking and thinking_info.get("start_time"):
-                elapsed = (
-                    datetime.now() - thinking_info["start_time"]
-                ).total_seconds()
+                elapsed = (datetime.now() - thinking_info["start_time"]).total_seconds()
                 if elapsed > 1:
                     with self._output_lock:
                         print_thinking_elapsed(elapsed, depth)
@@ -340,7 +345,7 @@ class StreamingUIHooks:
 
         # For delegate tools, extract agent info for the child session
         if tool_name.lower() == "delegate" and state:
-            state._pending_agent_info = {  # type: ignore[attr-defined]
+            state._pending_agent_info = {
                 "agent": tool_input.get("agent", ""),
                 "instruction": tool_input.get("instruction", ""),
             }
@@ -410,8 +415,14 @@ class StreamingUIHooks:
             )
 
             # Transfer agent info from parent's pending delegate call
-            parent = self.state_manager.get(parent_session_id) if parent_session_id else None
-            if parent and hasattr(parent, "_pending_agent_info") and parent._pending_agent_info:
+            parent = (
+                self.state_manager.get(parent_session_id) if parent_session_id else None
+            )
+            if (
+                parent
+                and hasattr(parent, "_pending_agent_info")
+                and parent._pending_agent_info
+            ):
                 info = parent._pending_agent_info
                 agent_str = info.get("agent", "")
                 instruction = info.get("instruction", "")
@@ -423,12 +434,16 @@ class StreamingUIHooks:
                     state.agent_name = parts[-1].replace("-", " ").title()
                 else:
                     state.agent_type = agent_str
-                    state.agent_name = agent_str.replace("-", " ").title() if agent_str else None
+                    state.agent_name = (
+                        agent_str.replace("-", " ").title() if agent_str else None
+                    )
 
                 # Short description from instruction
                 if instruction:
                     state.agent_desc = (
-                        instruction[:60] + "..." if len(instruction) > 60 else instruction
+                        instruction[:60] + "..."
+                        if len(instruction) > 60
+                        else instruction
                     )
 
                 parent._pending_agent_info = None
@@ -521,9 +536,7 @@ class StreamingUIHooks:
             phase=phase_text,
             phase_style=phase_style,
             breadcrumb=self.state_manager.get_breadcrumb(session_id),
-            current_tool=(
-                state.current_tool.name if state.current_tool else ""
-            ),
+            current_tool=(state.current_tool.name if state.current_tool else ""),
             input_tokens=total_input,
             output_tokens=state.metrics.output_tokens,
             cache_pct=cache_pct,

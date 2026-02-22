@@ -165,6 +165,7 @@
 <div class="nav">
   <div class="nav-tab active" onclick="go('before')">Current (Before)</div>
   <div class="nav-tab" onclick="go('after')">Redesign (After)</div>
+  <div class="nav-tab" onclick="go('polished')">Polished (Round 2)</div>
   <div class="nav-tab" onclick="go('changes')">Changes Summary</div>
   <div class="nav-tab" onclick="go('footer')">Footer Bar States</div>
 </div>
@@ -442,6 +443,223 @@ state, only displays information...
   </div>
 </div>
 
+<!-- ═══════════════════════════ POLISHED ═══════════════════════════ -->
+<div class="view" id="v-polished">
+  <div class="cs">
+    <div class="cs-title" style="font-size:20px; margin-top:16px;">Round 2 Polish — Terse Results, Root Footer, Tighter Spacing</div>
+    <div class="cs-desc">Three targeted fixes: (A) root session gets a summary footer, (B) result summaries are shorter with → separator, (C) spacing tightened between sections.</div>
+  </div>
+
+  <div class="terminal">
+    <div class="terminal-bar">
+      <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+      <div class="terminal-title">amplifier — hooks-streaming-ui — polished</div>
+    </div>
+    <div class="terminal-body">
+
+      <!-- User prompt -->
+      <div class="line" style="margin-bottom:4px;"><span class="green bold">></span> what does this module do and how would you improve it?</div>
+      <div class="line gap"></div>
+
+      <!-- Thinking with spinner -->
+      <div class="thinking-compact"><span class="spinner"></span><span>Thinking...</span></div>
+
+      <div class="line gap"></div>
+
+      <!-- ── Agent: Explorer (depth 1) ── no leading \n, tight spacing -->
+      <div class="agent-block d1">
+        <div class="agent-header">
+          <span class="cyan">◆</span>
+          <span class="agent-name cyan">Explorer</span>
+          <span class="badge explorer">explorer</span>
+          <span class="agent-desc">— Survey the entire codebase</span>
+        </div>
+
+        <!-- Todo inline under agent -->
+        <div class="todo-inline">
+          <div class="item done"><span class="icon">✓</span><span class="label">Map directory tree structure</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Inventory Python files</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Read config + docs</span></div>
+          <div class="item active"><span class="icon spinner"></span><span class="label">Read source files</span></div>
+          <div class="item pending"><span class="icon">□</span><span class="label">Synthesize report</span></div>
+          <div class="mini-progress">
+            <div class="mini-bar"><div class="mini-fill yellow" style="width:60%"></div></div>
+            <div class="mini-label">3/5</div>
+          </div>
+        </div>
+
+        <!-- Compact reads with terse → results -->
+        <div class="read-group">
+          <div class="rg-line"><span>▸ Read: pyproject.toml</span> <span class="dim">→</span> <span class="rg-result">(29L)</span></div>
+          <div class="rg-line"><span>▸ Read: __init__.py</span> <span class="dim">→</span> <span class="rg-result">(395L)</span></div>
+          <div class="rg-line"><span>▸ Read: formatting.py</span> <span class="dim">→</span> <span class="rg-result">(512L)</span></div>
+          <div class="rg-line"><span>▸ Read: rich_output.py</span> <span class="dim">→</span> <span class="rg-result">(406L)</span></div>
+          <div class="rg-line"><span>▸ Read: state.py</span> <span class="dim">→</span> <span class="rg-result">(177L)</span></div>
+          <div class="rg-line"><span>▸ Read: cost.py</span> <span class="dim">→</span> <span class="rg-result">(137L)</span></div>
+          <div class="rg-line"><span>▸ Read: renderer.py</span> <span class="dim">→</span> <span class="rg-result">(91L)</span></div>
+          <div class="rg-line"><span>▸ Read: terminal.py</span> <span class="dim">→</span> <span class="rg-result">(40L)</span></div>
+          <div class="rg-line"><span>▸ Grep: "validate"</span> <span class="dim">→</span> <span class="rg-result">(15 hits)</span></div>
+        </div>
+
+        <div class="thinking-compact" style="color:#50fa7b; font-style:normal;">
+          <span>✓</span><span>Reasoned for 12s</span>
+        </div>
+
+        <!-- Nested sub-agent (depth 2) — NO extra blank line before -->
+        <div class="agent-block d2" style="margin-left:0; margin-top:4px;">
+          <div class="agent-header">
+            <span class="magenta">◆</span>
+            <span class="agent-name magenta">Deep-Scan</span>
+            <span class="badge architect">sub-explorer</span>
+            <span class="agent-desc">— File inventory for tests + archive</span>
+          </div>
+          <div class="read-group">
+            <div class="rg-line"><span>▸ Read: tests/test_streaming_ui.py</span> <span class="dim">→</span> <span class="rg-result">(423L)</span></div>
+            <div class="rg-line"><span>▸ Read: tests/test_validation.py</span> <span class="dim">→</span> <span class="rg-result">(14L)</span></div>
+            <div class="rg-line"><span>▸ Read: tests/conftest.py</span> <span class="dim">→</span> <span class="rg-result">(11L)</span></div>
+            <div class="rg-line"><span>▸ Read: archive/ansi_markdown.py</span> <span class="dim">→</span> <span class="rg-result">(146L)</span></div>
+            <div class="rg-line"><span>▸ Read: archive/tables.py</span> <span class="dim">→</span> <span class="rg-result">(160L)</span></div>
+          </div>
+          <div class="agent-footer">✓ Complete · 5 reads · ⏱ 00:18</div>
+        </div>
+
+        <div class="agent-footer">✓ Complete · 7/7 tasks · 14 reads + 1 grep · ⏱ 01:29</div>
+      </div>
+      <!-- blank line AFTER agent completion, not before next agent -->
+
+      <div class="line gap"></div>
+
+      <!-- ── Agent: Zen-Architect (depth 1) — no leading \n -->
+      <div class="agent-block d1">
+        <div class="agent-header">
+          <span class="cyan">◆</span>
+          <span class="agent-name cyan">Zen-Architect</span>
+          <span class="badge architect">reviewer</span>
+          <span class="agent-desc">— Review codebase quality and patterns</span>
+        </div>
+
+        <div class="todo-inline">
+          <div class="item done"><span class="icon">✓</span><span class="label">Explore structure</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Analyze core modules</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Review error handling</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Assess design patterns</span></div>
+          <div class="item done"><span class="icon">✓</span><span class="label">Synthesize review</span></div>
+          <div class="mini-progress">
+            <div class="mini-bar"><div class="mini-fill green" style="width:100%"></div></div>
+            <div class="mini-label">5/5 ✓</div>
+          </div>
+        </div>
+
+        <div class="read-group">
+          <div class="rg-line"><span>▸ Read: __init__.py</span> <span class="dim">→</span> <span class="rg-result">(395L)</span></div>
+          <div class="rg-line"><span>▸ Read: formatting.py</span> <span class="dim">→</span> <span class="rg-result">(512L)</span></div>
+          <div class="rg-line"><span>▸ Edit: rich_output.py (+3, -1)</span> <span class="dim">→</span> <span class="rg-result">(✓)</span></div>
+        </div>
+
+        <div class="thinking-compact" style="color:#50fa7b; font-style:normal;">
+          <span>✓</span><span>Reasoned for 45s</span>
+        </div>
+
+        <div class="agent-footer">✓ Complete · 5/5 tasks · ⏱ 05:05</div>
+      </div>
+
+      <div class="line gap"></div>
+
+      <!-- End-of-turn token summary (kept inline) -->
+      <div class="token-summary">↓ 405k (45% cached) · ↑ 6.2k · ⏱ 05:05 · ~$1.23</div>
+
+      <div class="line gap"></div>
+      <div class="line" style="margin-bottom:8px;"><span class="bold cyan">Amplifier:</span></div>
+      <div class="line" style="color:#ccc; line-height:1.7;">
+<span class="bold" style="color:#e0e0e0;">What This Module Does</span>
+
+hooks-streaming-ui is an Amplifier hook module that provides
+real-time, Rich-formatted console output during AI agent
+sessions...
+      </div>
+
+      <!-- NEW: Root session summary footer -->
+      <div class="line gap"></div>
+      <div class="line" style="color:#444; font-size:12px;">─ 47 tool calls · ⏱ 05:05 · ~$1.23</div>
+    </div>
+  </div>
+
+  <!-- Side-by-side comparison: Current implementation vs Polished -->
+  <div class="cs" style="margin-top:32px;">
+    <div class="cs-title">Fix Details</div>
+  </div>
+
+  <!-- Fix A: Root footer -->
+  <div class="cs"><div class="cs-desc" style="font-size:12px; color:#ff5555; margin-bottom:4px;">Fix A: Root session gets a summary footer</div></div>
+  <div class="diff-panel">
+    <div class="diff-side"><div class="diff-header bh">Current (No footer)</div><div class="diff-body">
+      <div class="line dim" style="font-size:11px;">... response text ...</div>
+      <div class="line dim" style="font-size:11px; margin-top:8px;">(session just ends — nothing)</div>
+    </div></div>
+    <div class="diff-side"><div class="diff-header ah">Polished (Summary line)</div><div class="diff-body">
+      <div class="line dim" style="font-size:11px;">... response text ...</div>
+      <div class="line" style="color:#444; font-size:12px; margin-top:8px;">─ 47 tool calls · ⏱ 05:05 · ~$1.23</div>
+    </div></div>
+  </div>
+
+  <!-- Fix B: Terse results -->
+  <div class="cs"><div class="cs-desc" style="font-size:12px; color:#ff5555; margin-bottom:4px;">Fix B: Terse result summaries with → separator</div></div>
+  <div class="diff-panel">
+    <div class="diff-side"><div class="diff-header bh">Current</div><div class="diff-body">
+      <div class="rg-line"><span>▸ Read: src/auth.py</span><span class="rg-result"> (143 lines)</span></div>
+      <div class="rg-line"><span>▸ Glob: **/*.py</span><span class="rg-result"> (8 files)</span></div>
+      <div class="rg-line"><span>▸ Edit: src/auth.py (+3, -1)</span><span class="rg-result"> (done)</span></div>
+      <div class="rg-line"><span>▸ Grep: "validate"</span><span class="rg-result"> (15 matches)</span></div>
+    </div></div>
+    <div class="diff-side"><div class="diff-header ah">Polished</div><div class="diff-body">
+      <div class="rg-line"><span>▸ Read: src/auth.py</span> <span class="dim">→</span> <span class="rg-result">(143L)</span></div>
+      <div class="rg-line"><span>▸ Glob: **/*.py</span> <span class="dim">→</span> <span class="rg-result">(8)</span></div>
+      <div class="rg-line"><span>▸ Edit: src/auth.py (+3, -1)</span> <span class="dim">→</span> <span class="rg-result">(✓)</span></div>
+      <div class="rg-line"><span>▸ Grep: "validate"</span> <span class="dim">→</span> <span class="rg-result">(15 hits)</span></div>
+    </div></div>
+  </div>
+
+  <!-- Fix C: Spacing -->
+  <div class="cs" style="margin-bottom:80px;"><div class="cs-desc" style="font-size:12px; color:#ff5555; margin-bottom:4px;">Fix C: No blank line before agents, blank line after completion</div></div>
+  <div class="diff-panel" style="margin-bottom:80px;">
+    <div class="diff-side"><div class="diff-header bh">Current (gap before agent)</div><div class="diff-body">
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Todo: update 3 items</span> <span class="dim">(done)</span></div>
+      <div class="line gap" style="background:#331111; color:#ff5555; font-size:10px; text-align:center;">← extra blank line</div>
+      <div style="border-left:2px solid #7ee8fa; padding-left:12px; margin-top:0;">
+        <div style="display:flex; align-items:center; gap:6px;"><span class="cyan bold">◆ Explorer</span></div>
+      </div>
+    </div></div>
+    <div class="diff-side"><div class="diff-header ah">Polished (tight above, space after)</div><div class="diff-body">
+      <div class="line"><span class="cyan bold">▸</span> <span class="cyan">Todo: update 3 items</span> <span class="dim">→ (✓)</span></div>
+      <div style="border-left:2px solid #7ee8fa; padding-left:12px; margin-top:2px;">
+        <div style="display:flex; align-items:center; gap:6px;"><span class="cyan bold">◆ Explorer</span></div>
+        <div class="dim" style="font-size:11px; margin-top:4px;">✓ Complete · 3 calls · ⏱ 00:05</div>
+      </div>
+      <div class="line gap" style="background:#113311; color:#50fa7b; font-size:10px; text-align:center;">← blank line after completion, not before</div>
+    </div></div>
+  </div>
+
+  <!-- Future: Tool Burst Grouping teaser -->
+  <div class="cs" style="margin-bottom:20px;">
+    <div class="cs-title" style="color:#f1fa8c;">Future: Tool Burst Grouping</div>
+    <div class="cs-desc">Group rapid sequential tool calls into one summarized line.</div>
+  </div>
+  <div class="diff-panel" style="margin-bottom:80px;">
+    <div class="diff-side"><div class="diff-header bh">Current (6 lines)</div><div class="diff-body">
+      <div class="rg-line"><span>▸ Read: src/auth.py</span> <span class="dim">→</span> <span class="rg-result">(143L)</span></div>
+      <div class="rg-line"><span>▸ Read: src/auth/middleware.py</span> <span class="dim">→</span> <span class="rg-result">(89L)</span></div>
+      <div class="rg-line"><span>▸ Read: src/auth/tokens.py</span> <span class="dim">→</span> <span class="rg-result">(234L)</span></div>
+      <div class="rg-line"><span>▸ Read: src/auth/validators.py</span> <span class="dim">→</span> <span class="rg-result">(67L)</span></div>
+      <div class="rg-line"><span>▸ Grep: "validate_token"</span> <span class="dim">→</span> <span class="rg-result">(7 hits)</span></div>
+      <div class="rg-line"><span>▸ Read: src/auth/utils.py</span> <span class="dim">→</span> <span class="rg-result">(45L)</span></div>
+    </div></div>
+    <div class="diff-side"><div class="diff-header ah">Future (1 line)</div><div class="diff-body">
+      <div class="rg-line"><span style="color:#f1fa8c;">▸ Explored src/auth/ — 5 files (578L) + 1 search (7 hits)</span></div>
+      <div class="line dim" style="font-size:10px; margin-top:8px;">Config: tool_grouping: "auto" | "none"</div>
+    </div></div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════ CHANGES ═══════════════════════════ -->
 <div class="view" id="v-changes">
 
@@ -653,7 +871,7 @@ function go(name) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('v-' + name).classList.add('active');
   const tabs = document.querySelectorAll('.nav-tab');
-  ['before','after','changes','footer'].forEach((n, i) => {
+  ['before','after','polished','changes','footer'].forEach((n, i) => {
     if (n === name) tabs[i].classList.add('active');
   });
   document.getElementById('footer-demo').style.display = (name === 'after') ? 'block' : 'none';
