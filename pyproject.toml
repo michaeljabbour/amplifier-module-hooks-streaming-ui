@@ -4,9 +4,7 @@ version = "1.0.0"
 description = "Streaming UI display hooks for Amplifier - displays thinking blocks and tool invocations to console"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = [
-    "rich>=13.0.0",
-]
+dependencies = ["rich>=13.0.0"]
 
 [project.entry-points."amplifier.modules"]
 hooks-streaming-ui = "amplifier_module_hooks_streaming_ui:mount"
@@ -29,4 +27,3 @@ amplifier-core = { git = "https://github.com/microsoft/amplifier-core", branch =
 testpaths = ["tests"]
 addopts = "--import-mode=importlib"
 asyncio_mode = "strict"
-
