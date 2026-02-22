@@ -4,7 +4,6 @@ Display streaming LLM output with Rich Console rendering:
 - Session headers with elapsed time and cost
 - Smart tool headers (type-aware: Edit, Bash, Task, Read, etc.)
 - Nested session support with visual indentation
-- Status bar showing current phase and metrics
 - Colored diffs, error highlighting, result summaries
 
 Requires: rich
@@ -15,7 +14,6 @@ __amplifier_module_type__ = "hook"
 
 import logging
 import threading
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -25,7 +23,6 @@ from amplifier_core.models import HookResult
 from .cost import estimate_cost
 from .formatting import is_error_result
 from .rich_output import (
-    format_status_bar,
     print_session_footer,
     print_session_header,
     print_thinking_block,
@@ -35,7 +32,6 @@ from .rich_output import (
     print_tool_result,
 )
 from .state import Phase, StateManager, ToolCall
-from .terminal import Terminal
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +45,6 @@ async def mount(coordinator: Any, config: dict[str, Any]) -> None:
         show_tool_output=ui_config.get("show_tool_output", True),
         max_tool_lines=ui_config.get("max_tool_lines", 10),
         show_token_usage=ui_config.get("show_token_usage", True),
-        show_status_bar=ui_config.get("show_status_bar", True),
-        status_update_interval=ui_config.get("status_update_interval", 0.5),
     )
 
     # Register hooks
@@ -75,30 +69,19 @@ class StreamingUIHooks:
         show_tool_output: bool = True,
         max_tool_lines: int = 10,
         show_token_usage: bool = True,
-        show_status_bar: bool = True,
-        status_update_interval: float = 0.5,
     ):
         self.show_thinking = show_thinking
         self.show_tool_output = show_tool_output
         self.max_tool_lines = max_tool_lines
         self.show_token_usage = show_token_usage
-        self.show_status_bar = show_status_bar
-        self.status_update_interval = status_update_interval
 
         # State management
         self.state_manager = StateManager()
-        self.terminal = Terminal()  # kept for scroll region / status bar only
 
         # Thinking block tracking
         self.thinking_blocks: dict[int, dict[str, Any]] = {}
 
-        # Status bar thread
-        self._status_thread: Optional[threading.Thread] = None
-        self._status_running = False
-
-        # Output lock coordinates Rich Console output with Terminal status bar.
-        # Rich Console has internal locking, but status bar uses raw escape codes
-        # through Terminal, so we need external coordination.
+        # Output lock for thread safety
         self._output_lock = threading.Lock()
 
         # CWD for making paths relative in tool headers
@@ -130,8 +113,6 @@ class StreamingUIHooks:
         if state.depth == 0:
             with self._output_lock:
                 print_session_header(state)
-            if self.show_status_bar:
-                self._start_status_bar()
 
         return HookResult(action="continue")
 
@@ -159,10 +140,6 @@ class StreamingUIHooks:
             if state.depth > 0:
                 with self._output_lock:
                     print_session_footer(state, cost)
-
-            # Stop status bar for root session
-            if state.depth == 0 and self.show_status_bar:
-                self._stop_status_bar()
 
         return HookResult(action="continue")
 
@@ -384,38 +361,6 @@ class StreamingUIHooks:
         state.metrics.cache_read_tokens += usage.get("cache_read_input_tokens", 0)
         state.metrics.cache_create_tokens += usage.get("cache_creation_input_tokens", 0)
 
-    def _start_status_bar(self) -> None:
-        """Start background status bar updates."""
-        if self._status_running:
-            return
-
-        self._status_running = True
-        self.terminal.setup_scroll_region()
-        self._status_thread = threading.Thread(target=self._status_loop, daemon=True)
-        self._status_thread.start()
-
-    def _stop_status_bar(self) -> None:
-        """Stop status bar and restore terminal."""
-        self._status_running = False
-        if self._status_thread:
-            self._status_thread.join(timeout=1.0)
-            self._status_thread = None
-        self.terminal.clear_status()
-        self.terminal.teardown_scroll_region()
-
-    def _status_loop(self) -> None:
-        """Background loop to update status bar."""
-        while self._status_running:
-            state = self.state_manager.get_current()
-            if state:
-                status = format_status_bar(
-                    state.phase,
-                    state.elapsed_seconds(),
-                    state.metrics.total_tokens,
-                )
-                with self._output_lock:
-                    self.terminal.update_status(status)
-            time.sleep(self.status_update_interval)
 
 
 def _flatten_content(block: dict[str, Any]) -> str:
@@ -451,4 +396,4 @@ def _flatten_content(block: dict[str, Any]) -> str:
     return "\n".join(fragments)
 
 
-__all__ = ["mount", "StreamingUIHooks", "StateManager", "Terminal"]
+__all__ = ["mount", "StreamingUIHooks", "StateManager"]
