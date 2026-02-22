@@ -1260,3 +1260,153 @@ class TestInsightBlockRendering:
 
         assert isinstance(result, HookResult)
         assert result.action == "continue"
+
+
+# ---------------------------------------------------------------------------
+# OutputGuard Tests
+# ---------------------------------------------------------------------------
+
+
+class TestOutputGuard:
+    """Test OutputGuard spinner-aware lock."""
+
+    def test_pauses_active_spinner_on_enter(self):
+        """OutputGuard pauses an active spinner on enter and restarts on exit."""
+        from amplifier_module_hooks_streaming_ui.spinner import OutputGuard, SpinnerManager
+
+        mgr = SpinnerManager()
+        mgr.start("Working...", depth=1)
+        assert mgr.is_active
+
+        guard = OutputGuard(mgr)
+        with guard:
+            # Spinner should be paused inside the guard
+            assert not mgr.is_active
+        # Spinner should be restarted after exiting
+        assert mgr.is_active
+        mgr.stop()
+
+    def test_noop_when_spinner_is_none(self):
+        """OutputGuard works as a plain lock when spinner is None."""
+        from amplifier_module_hooks_streaming_ui.spinner import OutputGuard
+
+        guard = OutputGuard(None)
+        with guard:
+            pass  # Should not raise
+
+    def test_noop_when_spinner_not_active(self):
+        """OutputGuard is a no-op when spinner exists but isn't running."""
+        from amplifier_module_hooks_streaming_ui.spinner import OutputGuard, SpinnerManager
+
+        mgr = SpinnerManager()
+        guard = OutputGuard(mgr)
+        with guard:
+            assert not mgr.is_active
+
+    def test_sequential_with_blocks_no_leak(self):
+        """Sequential with blocks don't leak spinner state."""
+        from amplifier_module_hooks_streaming_ui.spinner import OutputGuard, SpinnerManager
+
+        mgr = SpinnerManager()
+        mgr.start("Task 1", depth=0)
+        guard = OutputGuard(mgr)
+
+        with guard:
+            assert not mgr.is_active
+        assert mgr.is_active
+
+        with guard:
+            assert not mgr.is_active
+        assert mgr.is_active
+        mgr.stop()
+
+
+# ---------------------------------------------------------------------------
+# Spinner Pause/Resume Tests
+# ---------------------------------------------------------------------------
+
+
+class TestSpinnerPauseResume:
+    """Test SpinnerManager pause() and resume() methods."""
+
+    def test_pause_returns_state_when_active(self):
+        """pause() returns (message, depth) when spinner is active."""
+        from amplifier_module_hooks_streaming_ui.spinner import SpinnerManager
+
+        mgr = SpinnerManager()
+        mgr.start("Thinking...", depth=2)
+        state = mgr.pause()
+
+        assert state is not None
+        assert state == ("Thinking...", 2)
+        assert not mgr.is_active
+
+    def test_pause_returns_none_when_inactive(self):
+        """pause() returns None when no spinner is running."""
+        from amplifier_module_hooks_streaming_ui.spinner import SpinnerManager
+
+        mgr = SpinnerManager()
+        state = mgr.pause()
+        assert state is None
+
+    def test_resume_restarts_with_saved_state(self):
+        """resume() restarts spinner with the saved message and depth."""
+        from amplifier_module_hooks_streaming_ui.spinner import SpinnerManager
+
+        mgr = SpinnerManager()
+        mgr.start("Building...", depth=1)
+        state = mgr.pause()
+        assert not mgr.is_active
+
+        mgr.resume(state)
+        assert mgr.is_active
+        mgr.stop()
+
+
+# ---------------------------------------------------------------------------
+# Sub-Agent Text Suppression Tests
+# ---------------------------------------------------------------------------
+
+
+class TestSubAgentTextSuppression:
+    """Test that verbose text blocks from sub-agents are suppressed."""
+
+    @pytest.mark.asyncio
+    async def test_text_from_depth_gt_zero_suppressed(self):
+        """Text blocks from depth > 0 return continue without printing."""
+        _console, buf = _capture_console()
+        hooks = _make_hooks()
+        # Create parent and child sessions
+        hooks.state_manager.get_or_create("parent", parent_id=None)
+        hooks.state_manager.get_or_create("child", parent_id="parent")
+
+        data = {
+            "session_id": "child",
+            "block_index": 0,
+            "total_blocks": 1,
+            "block": {"type": "text", "text": "Verbose sub-agent output here."},
+        }
+
+        result = await hooks.handle_content_block_end("content_block:end", data)
+
+        assert isinstance(result, HookResult)
+        assert result.action == "continue"
+        output = _get_output(buf)
+        assert "Verbose sub-agent output" not in output
+
+    @pytest.mark.asyncio
+    async def test_text_from_depth_zero_not_suppressed(self):
+        """Text blocks from root session (depth=0) are NOT suppressed."""
+        hooks = _make_hooks_with_session()
+
+        data = {
+            "session_id": "test-session",
+            "block_index": 0,
+            "total_blocks": 1,
+            "block": {"type": "text", "text": "Root session text."},
+        }
+
+        result = await hooks.handle_content_block_end("content_block:end", data)
+
+        assert isinstance(result, HookResult)
+        assert result.action == "continue"

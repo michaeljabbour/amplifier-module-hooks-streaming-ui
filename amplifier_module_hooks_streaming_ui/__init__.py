@@ -13,7 +13,6 @@ Requires: rich
 __amplifier_module_type__ = "hook"
 
 import logging
-import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -44,7 +43,7 @@ from .rich_output import (
     print_tool_result,
     print_write_summary,
 )
-from .spinner import SpinnerManager
+from .spinner import OutputGuard, SpinnerManager
 from .state import Phase, StateManager, ToolCall
 from .status_bar import StatusBarProvider
 
@@ -115,9 +114,6 @@ class StreamingUIHooks:
         # Thinking block tracking -- keyed by (session_id, block_index)
         self.thinking_blocks: dict[tuple[str, int], dict[str, Any]] = {}
 
-        # Output lock for thread safety
-        self._output_lock = threading.Lock()
-
         # CWD for making paths relative in tool headers
         self._cwd: Path | None = None
         try:
@@ -127,6 +123,9 @@ class StreamingUIHooks:
 
         # Activity spinner
         self._spinner = SpinnerManager() if show_status_bar else None
+
+        # Output lock: pauses spinner during Rich Console prints
+        self._output_lock = OutputGuard(self._spinner)
 
         # Status bar provider (CLI reads this for prompt_toolkit toolbar)
         self.status_bar = StatusBarProvider() if show_status_bar else None
@@ -200,6 +199,11 @@ class StreamingUIHooks:
                     with self._output_lock:
                         print_inline_status(toolbar_text)
 
+            # Cleanly shut down spinner for root session to prevent
+            # "Unhandled exception in event loop" during interpreter exit
+            if state.depth == 0 and self._spinner:
+                self._spinner.shutdown()
+
         self._update_status(session_id)
         return HookResult(action="continue")
 
@@ -271,6 +275,10 @@ class StreamingUIHooks:
                 modified_block = {**block, "text": remaining}
                 modified_data = {**data, "block": modified_block}
                 return HookResult(action="modify", data=modified_data)
+
+        # Suppress verbose text blocks from sub-agents
+        if block_type == "text" and state and state.depth > 0:
+            return HookResult(action="continue")
 
         # Handle thinking block completion
         key = (session_id, block_index) if block_index is not None else None
