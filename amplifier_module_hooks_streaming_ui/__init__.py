@@ -21,11 +21,18 @@ from typing import Any
 from amplifier_core.models import HookResult
 
 from .cost import estimate_cost
-from .formatting import format_code_change, format_tool_header, is_error_result
+from .formatting import (
+    INSIGHT_OPEN_PATTERN,
+    extract_insight_blocks,
+    format_code_change,
+    format_tool_header,
+    is_error_result,
+)
 from .insights import get_insight_instructions
 from .rich_output import (
     print_code_change,
     print_inline_status,
+    print_insight_block,
     print_session_footer,
     print_session_header,
     print_thinking_block,
@@ -68,6 +75,10 @@ async def mount(coordinator: Any, config: dict[str, Any]) -> None:
     coordinator.hooks.register("tool:post", hooks.handle_tool_post)
     coordinator.hooks.register("task:spawned", hooks.handle_task_spawned)
     coordinator.hooks.register("task:complete", hooks.handle_task_complete)
+
+    # Expose status bar for CLI toolbar integration (prompt_toolkit bottom_toolbar)
+    if hooks.status_bar:
+        coordinator.register_capability("status_bar", hooks.status_bar)
 
     logger.info("Mounted hooks-streaming-ui (Rich Console)")
 
@@ -242,6 +253,24 @@ class StreamingUIHooks:
         is_last_block = block_index == total_blocks - 1 if total_blocks else False
 
         depth = state.depth if state else 0
+
+        # Handle insight blocks in text output
+        if (
+            block_type == "text"
+            and self.insight_mode != "off"
+            and INSIGHT_OPEN_PATTERN.search(block.get("text", ""))
+        ):
+            insights, remaining = extract_insight_blocks(block.get("text", ""))
+            if insights:
+                with self._output_lock:
+                    for insight in insights:
+                        print_insight_block(insight, depth)
+                if not remaining:
+                    return HookResult(action="continue")
+                # Strip insight blocks from the text, pass remaining through
+                modified_block = {**block, "text": remaining}
+                modified_data = {**data, "block": modified_block}
+                return HookResult(action="modify", data=modified_data)
 
         # Handle thinking block completion
         key = (session_id, block_index) if block_index is not None else None
@@ -430,6 +459,7 @@ class StreamingUIHooks:
                     content_text = tool_input.get("content", "")
                     line_count = content_text.count("\n") + 1 if content_text else 0
                     from .formatting import make_relative
+
                     rel_path = make_relative(file_path, self._cwd)
                     print_write_summary(rel_path, line_count, depth)
                     if state:

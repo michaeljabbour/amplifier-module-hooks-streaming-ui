@@ -8,6 +8,7 @@ Ported from claudechic/formatting.py, adapted for Amplifier tool names.
 
 import difflib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -315,6 +316,39 @@ def count_diff_changes(old: str, new: str) -> tuple[int, int]:
 
 
 # ============================================================================
+# Insight Block Extraction
+# ============================================================================
+
+# Quick-check: does the text contain an insight opening delimiter?
+INSIGHT_OPEN_PATTERN = re.compile(r"★ Insight")
+
+# Full extraction: opening delimiter line → content → closing delimiter line.
+# Uses [─]{10,} to tolerate variable-length dash runs from LLMs.
+INSIGHT_BLOCK_PATTERN = re.compile(
+    r"`[★]?\s*★ Insight\s*[─]{10,}`\n(.+?)\n`[─]{10,}`",
+    re.DOTALL,
+)
+
+
+def extract_insight_blocks(text: str) -> tuple[list[str], str]:
+    """Extract insight blocks from text, returning (insights, remaining_text).
+
+    Each insight is the body text between the delimiters.
+    remaining_text is the original text with all insight blocks removed.
+    """
+    insights: list[str] = []
+    remaining = text
+
+    for match in INSIGHT_BLOCK_PATTERN.finditer(text):
+        insights.append(match.group(1).strip())
+
+    if insights:
+        remaining = INSIGHT_BLOCK_PATTERN.sub("", text).strip()
+
+    return insights, remaining
+
+
+# ============================================================================
 # Output Extraction
 # ============================================================================
 
@@ -447,7 +481,9 @@ def format_code_change(
                     diff_lines.append(DiffLine(i1 + idx + 1, " ", lines[idx]))
                 skipped = len(lines) - context_lines * 2
                 if skipped > 0:
-                    diff_lines.append(DiffLine(0, "~", f"... {skipped} unchanged lines ..."))
+                    diff_lines.append(
+                        DiffLine(0, "~", f"... {skipped} unchanged lines ...")
+                    )
                 for idx in range(context_lines):
                     real_idx = len(lines) - context_lines + idx
                     diff_lines.append(DiffLine(i1 + real_idx + 1, " ", lines[real_idx]))

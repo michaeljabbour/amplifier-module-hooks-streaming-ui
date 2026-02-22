@@ -1113,3 +1113,150 @@ class TestInsightsModule:
         from amplifier_module_hooks_streaming_ui.insights import get_insight_instructions
         result = get_insight_instructions("banana")
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Insight Block Rendering Tests
+# ---------------------------------------------------------------------------
+
+
+class TestInsightBlockRendering:
+    """Test insight block extraction, rendering, and handler integration."""
+
+    def test_extract_insight_blocks_single(self):
+        """Single insight block is extracted cleanly."""
+        from amplifier_module_hooks_streaming_ui.formatting import extract_insight_blocks
+
+        text = (
+            "`★ Insight ─────────────────────────────────`\n"
+            "Key point one\nKey point two\n"
+            "`─────────────────────────────────────────────`"
+        )
+        insights, remaining = extract_insight_blocks(text)
+        assert len(insights) == 1
+        assert "Key point one" in insights[0]
+        assert "Key point two" in insights[0]
+        assert remaining == ""
+
+    def test_extract_insight_blocks_embedded(self):
+        """Insight block surrounded by regular text returns both parts."""
+        from amplifier_module_hooks_streaming_ui.formatting import extract_insight_blocks
+
+        text = (
+            "Some preamble text.\n\n"
+            "`★ Insight ─────────────────────────────────`\n"
+            "Educational content here\n"
+            "`─────────────────────────────────────────────`\n\n"
+            "Some trailing text."
+        )
+        insights, remaining = extract_insight_blocks(text)
+        assert len(insights) == 1
+        assert "Educational content" in insights[0]
+        assert "preamble" in remaining
+        assert "trailing" in remaining
+
+    def test_extract_no_insight_blocks(self):
+        """Plain text with no insight delimiters passes through unchanged."""
+        from amplifier_module_hooks_streaming_ui.formatting import extract_insight_blocks
+
+        text = "Just regular output text with no special blocks."
+        insights, remaining = extract_insight_blocks(text)
+        assert insights == []
+        assert remaining == text
+
+    def test_extract_multiple_insight_blocks(self):
+        """Two insight blocks in one text chunk are both extracted."""
+        from amplifier_module_hooks_streaming_ui.formatting import extract_insight_blocks
+
+        text = (
+            "`★ Insight ─────────────────────────────────`\n"
+            "First insight\n"
+            "`─────────────────────────────────────────────`\n"
+            "Middle text\n"
+            "`★ Insight ─────────────────────────────────`\n"
+            "Second insight\n"
+            "`─────────────────────────────────────────────`"
+        )
+        insights, remaining = extract_insight_blocks(text)
+        assert len(insights) == 2
+        assert "First insight" in insights[0]
+        assert "Second insight" in insights[1]
+        assert "Middle text" in remaining
+
+    @pytest.mark.asyncio
+    async def test_content_block_end_renders_insight(self):
+        """Handler detects insight in text block, renders it, and returns modify."""
+        _console, buf = _capture_console()
+        hooks = _make_hooks_with_session(insight_mode="explanatory")
+
+        text = (
+            "Before.\n\n"
+            "`★ Insight ─────────────────────────────────`\n"
+            "Important insight content\n"
+            "`─────────────────────────────────────────────`\n\n"
+            "After."
+        )
+        data = {
+            "session_id": "test-session",
+            "block_index": 0,
+            "total_blocks": 1,
+            "block": {"type": "text", "text": text},
+        }
+
+        result = await hooks.handle_content_block_end("content_block:end", data)
+
+        assert isinstance(result, HookResult)
+        assert result.action == "modify"
+        # The modified data should have remaining text without insight block
+        modified_block = result.data["block"]
+        assert "Important insight content" not in modified_block["text"]
+        assert "Before." in modified_block["text"]
+        assert "After." in modified_block["text"]
+
+        output = _get_output(buf)
+        assert "Insight" in output
+        assert "Important insight content" in output
+
+    @pytest.mark.asyncio
+    async def test_content_block_end_ignores_when_mode_off(self):
+        """insight_mode='off' skips detection entirely."""
+        _console, buf = _capture_console()
+        hooks = _make_hooks_with_session(insight_mode="off")
+
+        text = (
+            "`★ Insight ─────────────────────────────────`\n"
+            "Should not be detected\n"
+            "`─────────────────────────────────────────────`"
+        )
+        data = {
+            "session_id": "test-session",
+            "block_index": 0,
+            "total_blocks": 1,
+            "block": {"type": "text", "text": text},
+        }
+
+        result = await hooks.handle_content_block_end("content_block:end", data)
+
+        assert isinstance(result, HookResult)
+        assert result.action == "continue"
+
+        output = _get_output(buf)
+        # No rich rendering — raw text would pass through the stream
+        assert "Should not be detected" not in output
+
+    @pytest.mark.asyncio
+    async def test_content_block_end_passthrough_no_insight(self):
+        """Regular text block returns continue when no insight markers present."""
+        hooks = _make_hooks_with_session(insight_mode="explanatory")
+
+        data = {
+            "session_id": "test-session",
+            "block_index": 0,
+            "total_blocks": 1,
+            "block": {"type": "text", "text": "Plain output text."},
+        }
+
+        result = await hooks.handle_content_block_end("content_block:end", data)
+
+        assert isinstance(result, HookResult)
+        assert result.action == "continue"

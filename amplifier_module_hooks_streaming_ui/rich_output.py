@@ -284,6 +284,24 @@ def print_tool_merged(
 # ============================================================================
 
 
+def print_insight_block(text: str, depth: int = 0) -> None:
+    """Print a rich-styled insight block with colored delimiters.
+
+    Renders:
+        ★ Insight ─────────────────────────────────
+        [body text lines]
+        ─────────────────────────────────────────────
+    """
+    console = get_console()
+    prefix = _depth_prefix(depth)
+    rule = BOX_HORIZONTAL * 45
+
+    console.print(f"{prefix}[bold yellow]★ Insight[/] [dim]{rule}[/]")
+    for line in text.strip().splitlines():
+        console.print(f"{prefix}  {line}")
+    console.print(f"{prefix}[dim]{rule}[/]")
+
+
 def print_thinking_block(text: str, depth: int = 0, max_preview_lines: int = 3) -> None:
     """Print a thinking block summary with optional preview.
 
@@ -406,17 +424,13 @@ def print_code_change(change: CodeChange, depth: int = 0) -> None:
     )
 
     # Summary: \u23bf  Added N lines, removed M lines
-    console.print(
-        f"{prefix}  [dim]\u23bf  {change.summary}[/]"
-    )
+    console.print(f"{prefix}  [dim]\u23bf  {change.summary}[/]")
 
     if not change.diff_lines:
         return
 
     # Calculate line number width for alignment
-    max_num = max(
-        (dl.number for dl in change.diff_lines if dl.number > 0), default=1
-    )
+    max_num = max((dl.number for dl in change.diff_lines if dl.number > 0), default=1)
     num_width = len(str(max_num))
 
     for dl in change.diff_lines:
@@ -426,20 +440,14 @@ def print_code_change(change: CodeChange, depth: int = 0) -> None:
             console.print(f"{prefix}  [dim]  {pad}{dl.text}[/]")
         elif dl.marker == "-":
             num_str = str(dl.number).rjust(num_width)
-            console.print(
-                f"{prefix}  [red]  {num_str} -{dl.text}[/]"
-            )
+            console.print(f"{prefix}  [red]  {num_str} -{dl.text}[/]")
         elif dl.marker == "+":
             num_str = str(dl.number).rjust(num_width)
-            console.print(
-                f"{prefix}  [green]  {num_str} +{dl.text}[/]"
-            )
+            console.print(f"{prefix}  [green]  {num_str} +{dl.text}[/]")
         else:
             # Context line
             num_str = str(dl.number).rjust(num_width)
-            console.print(
-                f"{prefix}  [dim]  {num_str}  {dl.text}[/]"
-            )
+            console.print(f"{prefix}  [dim]  {num_str}  {dl.text}[/]")
 
 
 def print_write_summary(file_path: str, line_count: int, depth: int = 0) -> None:
@@ -455,9 +463,7 @@ def print_write_summary(file_path: str, line_count: int, depth: int = 0) -> None
     console.print(
         f"{prefix}[tool.bullet]{BULLET_TRIANGLE}[/] [tool.header]Write({file_path})[/]"
     )
-    console.print(
-        f"{prefix}  [dim]\u23bf  Created ({line_count} lines)[/]"
-    )
+    console.print(f"{prefix}  [dim]\u23bf  Created ({line_count} lines)[/]")
 
 
 # ============================================================================
