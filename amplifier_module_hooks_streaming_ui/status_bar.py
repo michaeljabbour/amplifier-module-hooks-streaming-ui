@@ -104,6 +104,46 @@ class StatusBarProvider:
         """
         self._on_change = callback
 
+    def format_stats_line(self) -> str:
+        """Format status stats without phase indicator.
+
+        Returns compact stats string for LiveFooter to append to the spinner
+        line during execution::
+
+            ↓ 87k (48%) · ↑ 625 │ ⏱ 00:28 │ opus-4-6
+
+        Unlike ``format_toolbar()``, this omits the phase/tool indicator
+        (the spinner already conveys that) and the breadcrumb (too wide
+        for a single stderr line).
+        """
+        s = self.get_status()
+        parts: list[str] = []
+
+        # Tokens (compact)
+        if s.input_tokens > 0:
+            inp = _compact_number(s.input_tokens)
+            out = _compact_number(s.output_tokens)
+            token_str = f"\u2193 {inp}"
+            if s.cache_pct > 0:
+                token_str += f" ({s.cache_pct}%)"
+            token_str += f" \u00b7 \u2191 {out}"
+            parts.append(token_str)
+
+        # Elapsed
+        if s.elapsed:
+            parts.append(f"\u23f1 {s.elapsed}")
+
+        # Cost
+        if s.cost:
+            parts.append(s.cost)
+
+        # Model
+        if s.model:
+            short = s.model.replace("claude-", "").replace("-20250514", "")
+            parts.append(short)
+
+        return " \u2502 ".join(parts)
+
     def format_toolbar(self) -> str:
         """Format status as a plain string for prompt_toolkit bottom_toolbar.
 

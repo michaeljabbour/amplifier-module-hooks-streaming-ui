@@ -127,6 +127,11 @@ class StreamingUIHooks:
         # Status bar provider (CLI reads this for prompt_toolkit toolbar)
         self.status_bar = StatusBarProvider() if show_status_bar else None
 
+        # Connect footer to status bar so the spinner line shows live stats
+        # (tokens, elapsed, cost, model) during execution.
+        if self.status_bar:
+            self._footer.set_status_provider(self.status_bar.format_stats_line)
+
     # ========================================================================
     # Session Lifecycle
     # ========================================================================

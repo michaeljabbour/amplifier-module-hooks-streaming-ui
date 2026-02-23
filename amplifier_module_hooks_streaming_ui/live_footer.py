@@ -10,11 +10,16 @@ Thread-safe: uses a daemon timer thread that auto-stops when main exits.
 Registers an atexit handler to prevent interpreter shutdown errors.
 """
 
+from __future__ import annotations
+
 import atexit
 import sys
 import threading
 from contextlib import contextmanager
-from typing import Generator, Optional
+from typing import TYPE_CHECKING, Generator, Optional
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # Braille spinner frames (smooth 10-frame animation)
 SPINNER_FRAMES = [
@@ -83,6 +88,7 @@ class LiveFooter:
         self._lock = threading.Lock()  # protects animation state
         self._output_lock = threading.Lock()  # serializes output() blocks
         self._file = sys.stderr
+        self._status_fn: Callable[[], str] | None = None
 
         with _all_footers_lock:
             _all_footers.append(self)
@@ -118,6 +124,15 @@ class LiveFooter:
         """Update the footer message while it is showing."""
         with self._lock:
             self._message = message
+
+    def set_status_provider(self, fn: Callable[[], str]) -> None:
+        """Set a callable that returns stats text to append to the spinner line.
+
+        The callable should return a short plain-text string (e.g. token counts,
+        elapsed time, model name).  It is invoked on every animation tick, so it
+        must be fast and thread-safe.
+        """
+        self._status_fn = fn
 
     def shutdown(self) -> None:
         """Permanently stop the footer (called during cleanup)."""
@@ -185,7 +200,30 @@ class LiveFooter:
             self._timer = None
 
         prefix = "\u2502 " * depth
-        line = f"\r{prefix}{frame} {msg}"
+
+        # Append live stats from the status provider (tokens, elapsed, model)
+        status_suffix = ""
+        if self._status_fn:
+            try:
+                stats = self._status_fn()
+                if stats:
+                    status_suffix = f" \u2502 {stats}"
+            except Exception:
+                pass
+
+        visible = f"{prefix}{frame} {msg}{status_suffix}"
+
+        # Truncate to terminal width to prevent line wrapping
+        try:
+            import shutil as _shutil
+
+            cols = _shutil.get_terminal_size().columns
+            if len(visible) > cols:
+                visible = visible[: cols - 1]
+        except Exception:
+            pass
+
+        line = f"\r{visible}\033[K"
 
         try:
             f = self._file
