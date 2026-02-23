@@ -43,7 +43,7 @@ from .rich_output import (
     print_tool_result,
     print_write_summary,
 )
-from .spinner import OutputGuard, SpinnerManager
+from .live_footer import LiveFooter
 from .state import Phase, StateManager, ToolCall
 from .status_bar import StatusBarProvider
 
@@ -121,11 +121,8 @@ class StreamingUIHooks:
         except OSError:
             pass
 
-        # Activity spinner
-        self._spinner = SpinnerManager() if show_status_bar else None
-
-        # Output lock: pauses spinner during Rich Console prints
-        self._output_lock = OutputGuard(self._spinner)
+        # Activity footer (animated spinner + output serialization)
+        self._footer = LiveFooter(enabled=show_status_bar)
 
         # Status bar provider (CLI reads this for prompt_toolkit toolbar)
         self.status_bar = StatusBarProvider() if show_status_bar else None
@@ -150,7 +147,7 @@ class StreamingUIHooks:
 
         # Print session header for root sessions
         if state.depth == 0:
-            with self._output_lock:
+            with self._footer.output():
                 print_session_header(state)
 
         self._update_status(session_id)
@@ -189,20 +186,20 @@ class StreamingUIHooks:
                 )
 
             # Print session footer (root gets summary line, nested gets completion line)
-            with self._output_lock:
+            with self._footer.output():
                 print_session_footer(state, cost)
 
             # Inline status fallback (when CLI hasn't integrated prompt_toolkit toolbar)
             if self.status_bar and state.depth == 0:
                 toolbar_text = self.status_bar.format_toolbar()
                 if toolbar_text:
-                    with self._output_lock:
+                    with self._footer.output():
                         print_inline_status(toolbar_text)
 
-            # Cleanly shut down spinner for root session to prevent
+            # Cleanly shut down footer for root session to prevent
             # "Unhandled exception in event loop" during interpreter exit
-            if state.depth == 0 and self._spinner:
-                self._spinner.shutdown()
+            if state.depth == 0:
+                self._footer.shutdown()
 
         self._update_status(session_id)
         return HookResult(action="continue")
@@ -233,11 +230,10 @@ class StreamingUIHooks:
                 }
                 # Print compact thinking indicator
                 depth = state.depth if state else 0
-                with self._output_lock:
+                with self._footer.output():
                     print_thinking_start(depth)
-                # Start animated spinner
-                if self._spinner:
-                    self._spinner.start("Thinking...", depth)
+                # Start animated footer
+                self._footer.show("Thinking...", depth)
 
         self._update_status(session_id)
         return HookResult(action="continue")
@@ -266,7 +262,7 @@ class StreamingUIHooks:
         ):
             insights, remaining = extract_insight_blocks(block.get("text", ""))
             if insights:
-                with self._output_lock:
+                with self._footer.output():
                     for insight in insights:
                         print_insight_block(insight, depth)
                 if not remaining:
@@ -289,9 +285,8 @@ class StreamingUIHooks:
         ):
             thinking_info = self.thinking_blocks[key]
 
-            # Stop spinner before printing
-            if self._spinner:
-                self._spinner.stop()
+            # Stop footer before printing
+            self._footer.hide()
 
             # Extract thinking text for accordion preview
             thinking_text = ""
@@ -322,7 +317,7 @@ class StreamingUIHooks:
             if self.show_thinking and thinking_info.get("start_time"):
                 elapsed = (datetime.now() - thinking_info["start_time"]).total_seconds()
                 if elapsed > 1:
-                    with self._output_lock:
+                    with self._footer.output():
                         print_thinking_elapsed(elapsed, depth)
                         # Show preview if configured (0 = no preview, default)
                         if self.thinking_preview_lines > 0 and thinking_text:
@@ -351,7 +346,7 @@ class StreamingUIHooks:
                         state.metrics.cache_create_tokens,
                     )
 
-                with self._output_lock:
+                with self._footer.output():
                     print_token_usage(
                         state.metrics.input_tokens,
                         state.metrics.output_tokens,
@@ -386,14 +381,13 @@ class StreamingUIHooks:
 
         if tool_name.lower() in self.SLOW_TOOLS:
             # Slow tools: print header immediately so user sees activity
-            with self._output_lock:
+            with self._footer.output():
                 print_tool_call(tool_name, tool_input, depth, self._cwd)
             if state:
                 state.pending_tool_header = None
-            if self._spinner:
-                self._spinner.start(
-                    format_tool_header(tool_name, tool_input, self._cwd), depth
-                )
+            self._footer.show(
+                format_tool_header(tool_name, tool_input, self._cwd), depth
+            )
         else:
             # Fast tools: buffer header for single-line merge in tool:post
             if state:
@@ -420,9 +414,8 @@ class StreamingUIHooks:
         result = data.get("tool_response", data.get("result", {}))
         success = not is_error_result(result)
 
-        # Stop any active spinner
-        if self._spinner:
-            self._spinner.stop()
+        # Stop any active footer
+        self._footer.hide()
 
         # Save tool input before clearing (needed for diff display)
         _tool_input_for_display = (
@@ -437,7 +430,7 @@ class StreamingUIHooks:
             depth = state.depth if state else 0
             tool_input = _tool_input_for_display
 
-            with self._output_lock:
+            with self._footer.output():
                 # Claude-style inline diff for edit_file
                 if (
                     self.show_diff
@@ -548,7 +541,7 @@ class StreamingUIHooks:
 
                 parent._pending_agent_info = None
 
-            with self._output_lock:
+            with self._footer.output():
                 print_session_header(state)
 
             self._update_status(child_session_id)
@@ -580,7 +573,7 @@ class StreamingUIHooks:
                     state.metrics.cache_create_tokens,
                 )
 
-            with self._output_lock:
+            with self._footer.output():
                 print_session_footer(state, cost)
 
         self._update_status(session_id)

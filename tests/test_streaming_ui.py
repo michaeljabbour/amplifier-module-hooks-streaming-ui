@@ -51,7 +51,9 @@ def _get_output(buf: StringIO) -> str:
     return _ANSI_RE.sub("", buf.getvalue())
 
 
-def _make_hooks_with_session(session_id: str = "test-session", **kwargs) -> StreamingUIHooks:
+def _make_hooks_with_session(
+    session_id: str = "test-session", **kwargs
+) -> StreamingUIHooks:
     """Create hooks with a pre-registered session state."""
     hooks = _make_hooks(**kwargs)
     hooks.state_manager.get_or_create(session_id, parent_id=None)
@@ -70,7 +72,9 @@ async def test_mount_registers_hooks():
     coordinator.hooks = MagicMock()
     coordinator.hooks.register = MagicMock()
 
-    config = {"ui": {"show_thinking": True, "max_tool_lines": 5, "show_token_usage": True}}
+    config = {
+        "ui": {"show_thinking": True, "max_tool_lines": 5, "show_token_usage": True}
+    }
     await mount(coordinator, config)
 
     expected_events = [
@@ -115,7 +119,11 @@ class TestThinkingBlocks:
         """Test thinking block start detection."""
         _console, buf = _capture_console()
         hooks = _make_hooks_with_session()
-        data = {"block_type": "thinking", "block_index": 0, "session_id": "test-session"}
+        data = {
+            "block_type": "thinking",
+            "block_index": 0,
+            "session_id": "test-session",
+        }
 
         result = await hooks.handle_content_block_start("content_block:start", data)
 
@@ -127,7 +135,11 @@ class TestThinkingBlocks:
     async def test_thinking_block_disabled(self):
         """Test thinking blocks are not tracked when disabled."""
         hooks = _make_hooks(show_thinking=False)
-        data = {"block_type": "thinking", "block_index": 0, "session_id": "test-session"}
+        data = {
+            "block_type": "thinking",
+            "block_index": 0,
+            "session_id": "test-session",
+        }
 
         result = await hooks.handle_content_block_start("content_block:start", data)
 
@@ -149,7 +161,10 @@ class TestThinkingBlocks:
         data = {
             "session_id": "test-session",
             "block_index": 0,
-            "block": {"type": "thinking", "thinking": "This is a test thought process."},
+            "block": {
+                "type": "thinking",
+                "thinking": "This is a test thought process.",
+            },
         }
 
         result = await hooks.handle_content_block_end("content_block:end", data)
@@ -168,6 +183,7 @@ class TestThinkingBlocks:
         _console, buf = _capture_console()
         hooks = _make_hooks_with_session(thinking_preview_lines=3)
         from datetime import datetime, timedelta
+
         hooks.thinking_blocks[("test-session", 0)] = {
             "started": True,
             "session_id": "test-session",
@@ -177,7 +193,10 @@ class TestThinkingBlocks:
         data = {
             "session_id": "test-session",
             "block_index": 0,
-            "block": {"type": "thinking", "thinking": "Line one\nLine two\nLine three\nLine four"},
+            "block": {
+                "type": "thinking",
+                "thinking": "Line one\nLine two\nLine three\nLine four",
+            },
         }
 
         result = await hooks.handle_content_block_end("content_block:end", data)
@@ -201,6 +220,7 @@ class TestThinkingBlocks:
         _console, buf = _capture_console()
         hooks = _make_hooks_with_session(thinking_preview_lines=3)
         from datetime import datetime, timedelta
+
         hooks.thinking_blocks[("test-session", 1)] = {
             "started": True,
             "session_id": "test-session",
@@ -666,22 +686,22 @@ class TestAgentTree:
 
 
 # ---------------------------------------------------------------------------
-# Spinner Tests
+# LiveFooter Tests
 # ---------------------------------------------------------------------------
 
 
-class TestSpinner:
-    """Test spinner behavior."""
+class TestLiveFooter:
+    """Test LiveFooter behavior."""
 
-    def test_spinner_not_created_when_disabled(self):
-        """Spinner should not be created when show_status_bar=False."""
+    def test_footer_disabled_when_status_bar_off(self):
+        """Footer should be disabled when show_status_bar=False."""
         hooks = _make_hooks(show_status_bar=False)
-        assert hooks._spinner is None
+        assert not hooks._footer._enabled
 
-    def test_spinner_created_when_enabled(self):
-        """Spinner should be created when show_status_bar=True."""
+    def test_footer_enabled_when_status_bar_on(self):
+        """Footer should be enabled when show_status_bar=True."""
         hooks = _make_hooks(show_status_bar=True)
-        assert hooks._spinner is not None
+        assert hooks._footer._enabled
 
 
 # ---------------------------------------------------------------------------
@@ -706,7 +726,9 @@ class TestStatusBar:
     async def test_status_bar_updated_on_events(self):
         """Test that status bar is updated after events."""
         hooks = StreamingUIHooks(show_status_bar=True)
-        hooks.state_manager.get_or_create("test-session", parent_id=None, model="claude-opus-4-6")
+        hooks.state_manager.get_or_create(
+            "test-session", parent_id=None, model="claude-opus-4-6"
+        )
 
         await hooks.handle_session_start(
             "session:start",
@@ -720,8 +742,11 @@ class TestStatusBar:
     def test_status_bar_format_toolbar(self):
         """Test toolbar formatting."""
         from amplifier_module_hooks_streaming_ui.status_bar import StatusBarProvider
+
         sb = StatusBarProvider()
-        sb.update(phase="Thinking", input_tokens=50000, output_tokens=1000, elapsed="00:15")
+        sb.update(
+            phase="Thinking", input_tokens=50000, output_tokens=1000, elapsed="00:15"
+        )
 
         toolbar = sb.format_toolbar()
         assert "Thinking" in toolbar
@@ -778,6 +803,7 @@ class TestInsightInjection:
 
         assert isinstance(result, HookResult)
         assert result.action == "inject_context"
+        assert result.context_injection is not None
         assert "5-10 lines" in result.context_injection
 
     @pytest.mark.asyncio
@@ -792,6 +818,7 @@ class TestInsightInjection:
 
         assert isinstance(result, HookResult)
         assert result.action == "inject_context"
+        assert result.context_injection is not None
         assert "\u2605 Insight" in result.context_injection
         assert "learning" in result.context_injection.lower()
 
@@ -986,7 +1013,11 @@ class TestCodeChangeDisplay:
             {
                 "session_id": "test-session",
                 "tool_name": "edit_file",
-                "tool_input": {"file_path": "f.py", "old_string": old, "new_string": new},
+                "tool_input": {
+                    "file_path": "f.py",
+                    "old_string": old,
+                    "new_string": new,
+                },
             },
         )
 
@@ -995,7 +1026,11 @@ class TestCodeChangeDisplay:
             {
                 "session_id": "test-session",
                 "tool_name": "edit_file",
-                "tool_input": {"file_path": "f.py", "old_string": old, "new_string": new},
+                "tool_input": {
+                    "file_path": "f.py",
+                    "old_string": old,
+                    "new_string": new,
+                },
                 "tool_response": {"success": True},
             },
         )
@@ -1086,31 +1121,46 @@ class TestInsightsModule:
     """Test the insights module directly."""
 
     def test_get_insight_explanatory(self):
-        from amplifier_module_hooks_streaming_ui.insights import get_insight_instructions
+        from amplifier_module_hooks_streaming_ui.insights import (
+            get_insight_instructions,
+        )
+
         result = get_insight_instructions("explanatory")
         assert result is not None
         assert "\u2605 Insight" in result
 
     def test_get_insight_learning(self):
-        from amplifier_module_hooks_streaming_ui.insights import get_insight_instructions
+        from amplifier_module_hooks_streaming_ui.insights import (
+            get_insight_instructions,
+        )
+
         result = get_insight_instructions("learning")
         assert result is not None
         assert "5-10 lines" in result
 
     def test_get_insight_combined(self):
-        from amplifier_module_hooks_streaming_ui.insights import get_insight_instructions
+        from amplifier_module_hooks_streaming_ui.insights import (
+            get_insight_instructions,
+        )
+
         result = get_insight_instructions("combined")
         assert result is not None
         assert "\u2605 Insight" in result
         assert "learning" in result.lower()
 
     def test_get_insight_off_returns_none(self):
-        from amplifier_module_hooks_streaming_ui.insights import get_insight_instructions
+        from amplifier_module_hooks_streaming_ui.insights import (
+            get_insight_instructions,
+        )
+
         result = get_insight_instructions("off")
         assert result is None
 
     def test_get_insight_unknown_returns_none(self):
-        from amplifier_module_hooks_streaming_ui.insights import get_insight_instructions
+        from amplifier_module_hooks_streaming_ui.insights import (
+            get_insight_instructions,
+        )
+
         result = get_insight_instructions("banana")
         assert result is None
 
@@ -1125,7 +1175,9 @@ class TestInsightBlockRendering:
 
     def test_extract_insight_blocks_single(self):
         """Single insight block is extracted cleanly."""
-        from amplifier_module_hooks_streaming_ui.formatting import extract_insight_blocks
+        from amplifier_module_hooks_streaming_ui.formatting import (
+            extract_insight_blocks,
+        )
 
         text = (
             "`★ Insight ─────────────────────────────────`\n"
@@ -1140,7 +1192,9 @@ class TestInsightBlockRendering:
 
     def test_extract_insight_blocks_embedded(self):
         """Insight block surrounded by regular text returns both parts."""
-        from amplifier_module_hooks_streaming_ui.formatting import extract_insight_blocks
+        from amplifier_module_hooks_streaming_ui.formatting import (
+            extract_insight_blocks,
+        )
 
         text = (
             "Some preamble text.\n\n"
@@ -1157,7 +1211,9 @@ class TestInsightBlockRendering:
 
     def test_extract_no_insight_blocks(self):
         """Plain text with no insight delimiters passes through unchanged."""
-        from amplifier_module_hooks_streaming_ui.formatting import extract_insight_blocks
+        from amplifier_module_hooks_streaming_ui.formatting import (
+            extract_insight_blocks,
+        )
 
         text = "Just regular output text with no special blocks."
         insights, remaining = extract_insight_blocks(text)
@@ -1166,7 +1222,9 @@ class TestInsightBlockRendering:
 
     def test_extract_multiple_insight_blocks(self):
         """Two insight blocks in one text chunk are both extracted."""
-        from amplifier_module_hooks_streaming_ui.formatting import extract_insight_blocks
+        from amplifier_module_hooks_streaming_ui.formatting import (
+            extract_insight_blocks,
+        )
 
         text = (
             "`★ Insight ─────────────────────────────────`\n"
@@ -1208,6 +1266,7 @@ class TestInsightBlockRendering:
         assert isinstance(result, HookResult)
         assert result.action == "modify"
         # The modified data should have remaining text without insight block
+        assert result.data is not None
         modified_block = result.data["block"]
         assert "Important insight content" not in modified_block["text"]
         assert "Before." in modified_block["text"]
@@ -1263,104 +1322,103 @@ class TestInsightBlockRendering:
 
 
 # ---------------------------------------------------------------------------
-# OutputGuard Tests
+# LiveFooter Output Guard Tests
 # ---------------------------------------------------------------------------
 
 
-class TestOutputGuard:
-    """Test OutputGuard spinner-aware lock."""
+class TestLiveFooterOutput:
+    """Test LiveFooter.output() context manager."""
 
-    def test_pauses_active_spinner_on_enter(self):
-        """OutputGuard pauses an active spinner on enter and restarts on exit."""
-        from amplifier_module_hooks_streaming_ui.spinner import OutputGuard, SpinnerManager
+    def test_pauses_active_footer_on_enter(self):
+        """output() pauses an active footer on enter and restarts on exit."""
+        from amplifier_module_hooks_streaming_ui.live_footer import LiveFooter
 
-        mgr = SpinnerManager()
-        mgr.start("Working...", depth=1)
-        assert mgr.is_active
+        footer = LiveFooter(enabled=True)
+        footer.show("Working...", depth=1)
+        assert footer.is_active
 
-        guard = OutputGuard(mgr)
-        with guard:
-            # Spinner should be paused inside the guard
-            assert not mgr.is_active
-        # Spinner should be restarted after exiting
-        assert mgr.is_active
-        mgr.stop()
+        with footer.output():
+            # Footer should be paused inside the block
+            assert not footer.is_active
+        # Footer should be restarted after exiting
+        assert footer.is_active
+        footer.hide()
 
-    def test_noop_when_spinner_is_none(self):
-        """OutputGuard works as a plain lock when spinner is None."""
-        from amplifier_module_hooks_streaming_ui.spinner import OutputGuard
+    def test_noop_when_disabled(self):
+        """output() works as a plain lock when footer is disabled."""
+        from amplifier_module_hooks_streaming_ui.live_footer import LiveFooter
 
-        guard = OutputGuard(None)
-        with guard:
+        footer = LiveFooter(enabled=False)
+        with footer.output():
             pass  # Should not raise
 
-    def test_noop_when_spinner_not_active(self):
-        """OutputGuard is a no-op when spinner exists but isn't running."""
-        from amplifier_module_hooks_streaming_ui.spinner import OutputGuard, SpinnerManager
+    def test_noop_when_footer_not_active(self):
+        """output() is a no-op when footer exists but isn't showing."""
+        from amplifier_module_hooks_streaming_ui.live_footer import LiveFooter
 
-        mgr = SpinnerManager()
-        guard = OutputGuard(mgr)
-        with guard:
-            assert not mgr.is_active
+        footer = LiveFooter(enabled=True)
+        with footer.output():
+            assert not footer.is_active
 
-    def test_sequential_with_blocks_no_leak(self):
-        """Sequential with blocks don't leak spinner state."""
-        from amplifier_module_hooks_streaming_ui.spinner import OutputGuard, SpinnerManager
+    def test_sequential_output_blocks_no_leak(self):
+        """Sequential output() blocks don't leak footer state."""
+        from amplifier_module_hooks_streaming_ui.live_footer import LiveFooter
 
-        mgr = SpinnerManager()
-        mgr.start("Task 1", depth=0)
-        guard = OutputGuard(mgr)
+        footer = LiveFooter(enabled=True)
+        footer.show("Task 1", depth=0)
 
-        with guard:
-            assert not mgr.is_active
-        assert mgr.is_active
+        with footer.output():
+            assert not footer.is_active
+        assert footer.is_active
 
-        with guard:
-            assert not mgr.is_active
-        assert mgr.is_active
-        mgr.stop()
+        with footer.output():
+            assert not footer.is_active
+        assert footer.is_active
+        footer.hide()
 
 
 # ---------------------------------------------------------------------------
-# Spinner Pause/Resume Tests
+# LiveFooter Show/Hide Tests
 # ---------------------------------------------------------------------------
 
 
-class TestSpinnerPauseResume:
-    """Test SpinnerManager pause() and resume() methods."""
+class TestLiveFooterShowHide:
+    """Test LiveFooter show() and hide() methods."""
 
-    def test_pause_returns_state_when_active(self):
-        """pause() returns (message, depth) when spinner is active."""
-        from amplifier_module_hooks_streaming_ui.spinner import SpinnerManager
+    def test_show_activates_footer(self):
+        """show() activates the footer animation."""
+        from amplifier_module_hooks_streaming_ui.live_footer import LiveFooter
 
-        mgr = SpinnerManager()
-        mgr.start("Thinking...", depth=2)
-        state = mgr.pause()
+        footer = LiveFooter(enabled=True)
+        footer.show("Thinking...", depth=2)
+        assert footer.is_active
+        footer.hide()
 
-        assert state is not None
-        assert state == ("Thinking...", 2)
-        assert not mgr.is_active
+    def test_hide_deactivates_footer(self):
+        """hide() stops the footer."""
+        from amplifier_module_hooks_streaming_ui.live_footer import LiveFooter
 
-    def test_pause_returns_none_when_inactive(self):
-        """pause() returns None when no spinner is running."""
-        from amplifier_module_hooks_streaming_ui.spinner import SpinnerManager
+        footer = LiveFooter(enabled=True)
+        footer.show("Building...", depth=1)
+        assert footer.is_active
+        footer.hide()
+        assert not footer.is_active
 
-        mgr = SpinnerManager()
-        state = mgr.pause()
-        assert state is None
+    def test_show_noop_when_disabled(self):
+        """show() is a no-op when footer is disabled."""
+        from amplifier_module_hooks_streaming_ui.live_footer import LiveFooter
 
-    def test_resume_restarts_with_saved_state(self):
-        """resume() restarts spinner with the saved message and depth."""
-        from amplifier_module_hooks_streaming_ui.spinner import SpinnerManager
+        footer = LiveFooter(enabled=False)
+        footer.show("Thinking...")
+        assert not footer.is_active
 
-        mgr = SpinnerManager()
-        mgr.start("Building...", depth=1)
-        state = mgr.pause()
-        assert not mgr.is_active
+    def test_hide_when_inactive_is_safe(self):
+        """hide() when no footer is running does not raise."""
+        from amplifier_module_hooks_streaming_ui.live_footer import LiveFooter
 
-        mgr.resume(state)
-        assert mgr.is_active
-        mgr.stop()
+        footer = LiveFooter(enabled=True)
+        footer.hide()  # Should not raise
+        assert not footer.is_active
 
 
 # ---------------------------------------------------------------------------
