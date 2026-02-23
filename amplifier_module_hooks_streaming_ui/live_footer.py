@@ -199,6 +199,11 @@ class LiveFooter:
             depth = self._depth
             self._timer = None
 
+        # Enforce single-line: delegate descriptions can contain newlines which
+        # cause \r to only rewind the *last* line, leaving prior lines stacked.
+        if "\n" in msg:
+            msg = msg.split("\n", 1)[0]
+
         prefix = "\u2502 " * depth
 
         # Append live stats from the status provider (tokens, elapsed, model)
