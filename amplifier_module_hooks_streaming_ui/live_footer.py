@@ -41,6 +41,10 @@ _shutting_down = False
 _all_footers: list["LiveFooter"] = []
 _all_footers_lock = threading.Lock()
 
+# Singleton footer for process-wide sharing across sessions.
+_singleton_footer: Optional["LiveFooter"] = None
+_singleton_lock = threading.Lock()
+
 
 def _atexit_cleanup() -> None:
     """Stop all footers before interpreter teardown."""
@@ -55,6 +59,37 @@ def _atexit_cleanup() -> None:
 
 
 atexit.register(_atexit_cleanup)
+
+
+def _reset_singleton() -> None:
+    """Reset the singleton for testing. Not for production use."""
+    global _singleton_footer  # noqa: PLW0603
+    with _singleton_lock:
+        if _singleton_footer is not None:
+            _singleton_footer.shutdown()
+            with _all_footers_lock:
+                try:
+                    _all_footers.remove(_singleton_footer)
+                except ValueError:
+                    pass
+            _singleton_footer = None
+
+
+def get_footer(enabled: bool = True) -> "LiveFooter":
+    """Get or create the process-wide singleton LiveFooter.
+
+    When parent and child sessions share the same process (e.g. during
+    delegate), a single footer prevents concurrent timer threads from
+    fighting over stderr and causing spinner-line stacking.
+    """
+    global _singleton_footer  # noqa: PLW0603
+    with _singleton_lock:
+        if _singleton_footer is None:
+            _singleton_footer = LiveFooter(enabled=enabled)
+        elif enabled and not _singleton_footer._enabled:
+            # Upgrade: first caller was disabled, new caller wants animation.
+            _singleton_footer._enabled = True
+        return _singleton_footer
 
 
 class LiveFooter:

@@ -128,8 +128,12 @@ class StateManager:
             return existing
 
         depth = 0
-        if parent_id and parent_id in self.sessions:
-            depth = self.sessions[parent_id].depth + 1
+        if parent_id:
+            if parent_id in self.sessions:
+                depth = self.sessions[parent_id].depth + 1
+            else:
+                # Parent exists in a different state-manager (child session).
+                depth = 1
 
         state = SessionState(
             session_id=session_id,

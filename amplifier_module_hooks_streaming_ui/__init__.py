@@ -43,7 +43,7 @@ from .rich_output import (
     print_tool_result,
     print_write_summary,
 )
-from .live_footer import LiveFooter
+from .live_footer import LiveFooter, get_footer
 from .state import Phase, StateManager, ToolCall
 from .status_bar import StatusBarProvider
 
@@ -122,14 +122,14 @@ class StreamingUIHooks:
             pass
 
         # Activity footer (animated spinner + output serialization)
-        self._footer = LiveFooter(enabled=show_status_bar)
+        self._footer = get_footer(enabled=show_status_bar)
 
         # Status bar provider (CLI reads this for prompt_toolkit toolbar)
         self.status_bar = StatusBarProvider() if show_status_bar else None
 
         # Connect footer to status bar so the spinner line shows live stats
         # (tokens, elapsed, cost, model) during execution.
-        if self.status_bar:
+        if self.status_bar and self._footer._status_fn is None:
             self._footer.set_status_provider(self.status_bar.format_stats_line)
 
     # ========================================================================
