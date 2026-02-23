@@ -265,14 +265,26 @@ class LiveFooter:
 
         line = f"\r{visible}\033[K"
 
+        # Guard against ghost lines: output() holds _output_lock while it
+        # clears the spinner line and prints Rich output.  If we wrote here
+        # while that lock is held, the frame would land between the clear
+        # and the Rich print, leaving a permanent "ghost" line in scrollback.
+        # Non-blocking acquire: skip this frame if output() is active.
+        if not self._output_lock.acquire(blocking=False):
+            with self._lock:
+                if self._active:
+                    self._schedule_tick()
+            return
+
         try:
             f = self._file
-            if f is None or f.closed:
-                return
-            f.write(line)
-            f.flush()
+            if f is not None and not f.closed:
+                f.write(line)
+                f.flush()
         except (OSError, ValueError, RuntimeError, TypeError):
-            return
+            pass
+        finally:
+            self._output_lock.release()
 
         if _shutting_down:
             return
